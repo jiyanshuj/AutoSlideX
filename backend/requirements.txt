@@ -1,9 +1,9 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-python-multipart==0.0.6
-google-generativeai==0.3.1
-python-pptx==0.6.23
-requests==2.31.0
-python-dotenv==1.0.0
+fastapi==0.115.0
+uvicorn==0.32.0
+pydantic==2.9.0
+python-multipart==0.0.9
+google-generativeai==0.8.3
+python-pptx==1.0.2
+requests==2.32.3
+python-dotenv==1.0.1
 Pillow==11.0.0
