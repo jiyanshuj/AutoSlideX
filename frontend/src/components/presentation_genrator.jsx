@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, Sparkles, Zap } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'https://autoslidex.onrender.com/api';
 
 // Animated 3D Background Component with Mouse Interaction
 const AnimatedBackground = () => {
