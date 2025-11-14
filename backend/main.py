@@ -260,11 +260,13 @@ def generate_fallback_topics(topic: str, num_slides: int) -> List[str]:
 def is_generic_content(content: List[str]) -> bool:
     """
     Check if slide content is generic/placeholder/repetitive
+    ENHANCED with strict forbidden phrase detection
     """
     if not content or len(content) < 3:
         return True
     
-    generic_phrases = [
+    # Forbidden phrases that indicate low-quality content
+    forbidden_phrases = [
         "key concept about",
         "important aspect to consider",
         "related insight",
@@ -272,19 +274,29 @@ def is_generic_content(content: List[str]) -> bool:
         "additional key insight",
         "additional insights",
         "core concepts and fundamentals",
-        "practical applications and real-world use cases"
+        "practical applications and real-world use cases",
+        "key considerations and best practices",
+        "unit-i 10 hours",
+        "unit-i introduction"
     ]
     
     # Check each bullet point
     for point in content:
         point_lower = point.lower()
         
-        # Check for generic phrases
-        if any(phrase in point_lower for phrase in generic_phrases):
-            return True
+        # Check for forbidden phrases
+        for phrase in forbidden_phrases:
+            if phrase in point_lower:
+                print(f"   ⚠️ Generic/forbidden phrase found: '{phrase}'")
+                return True
         
         # Check if too short (likely generic)
         if len(point.split()) < 8:
+            return True
+        
+        # Check if point is mostly the same across multiple bullets
+        point_words = set(point_lower.split())
+        if len(point_words) < 6:  # Too few unique words
             return True
     
     return False
@@ -293,6 +305,7 @@ def is_generic_content(content: List[str]) -> bool:
 def has_verbatim_repetition(content: List[str], original_topic: str) -> bool:
     """
     Check if content contains verbatim repetition from the original topic
+    STRICT detection - even partial phrases trigger rejection
     """
     if not content:
         return False
@@ -301,13 +314,29 @@ def has_verbatim_repetition(content: List[str], original_topic: str) -> bool:
     content_text = " ".join(content).lower()
     topic_lower = original_topic.lower()
     
-    # Extract phrases from topic (3+ words)
+    # List of forbidden phrases that should NEVER appear
+    forbidden_phrases = [
+        "practical applications and real-world use cases in unit",
+        "unit-i 10 hours introduction",
+        "about object orientated technology, development and oo modeling",
+        "modeling concepts: modeling design technique",
+        "three models, class model, state model and interaction model",
+        "key considerations and best practices for implementation"
+    ]
+    
+    # Check for any forbidden phrase
+    for phrase in forbidden_phrases:
+        if phrase in content_text:
+            print(f"   ⚠️ FORBIDDEN phrase detected: '{phrase[:50]}...'")
+            return True
+    
+    # Extract phrases from topic (4+ words)
     topic_words = topic_lower.split()
     
-    # Check for long verbatim phrases (5+ consecutive words from topic)
-    for i in range(len(topic_words) - 4):
-        phrase = " ".join(topic_words[i:i+5])
-        if phrase in content_text:
+    # Check for long verbatim phrases (4+ consecutive words from topic)
+    for i in range(len(topic_words) - 3):
+        phrase = " ".join(topic_words[i:i+4])
+        if len(phrase) > 15 and phrase in content_text:  # Ignore very short phrases
             print(f"   ⚠️ Found verbatim phrase: '{phrase}'")
             return True
     
@@ -454,11 +483,18 @@ You MUST NOT repeat ANY of these phrases or similar wording:
     {previous_content_summary}
     
     ========== ABSOLUTE PROHIBITIONS ==========
-    ❌ DO NOT copy phrases from the original topic: {forbidden_topic_phrases}
-    ❌ DO NOT use generic statements like "practical applications and real-world use cases"
+    ❌ FORBIDDEN PHRASES - DO NOT USE ANY OF THESE:
+       • "practical applications and real-world use cases in unit"
+       • "unit-i 10 hours introduction"
+       • "about object orientated technology, development and oo modeling"
+       • "modeling concepts: modeling design technique"
+       • "three models, class model, state model and interaction model"
+       • "key considerations and best practices for implementation"
+    
+    ❌ DO NOT copy ANY phrases from the original topic description
+    ❌ DO NOT use generic statements - be HIGHLY SPECIFIC
     ❌ DO NOT repeat ANY content from previous slides
-    ❌ DO NOT use vague phrases like "core concepts and fundamentals"
-    ❌ DO NOT mention "unit-i", "10 hours introduction", or similar course-specific terms
+    ❌ DO NOT mention course-specific terms like "unit-i", "10 hours"
     ================================================
     
     ========== CRITICAL UNIQUENESS REQUIREMENTS ==========
@@ -520,7 +556,7 @@ You MUST NOT repeat ANY of these phrases or similar wording:
     REMEMBER: Slide {slide_number} about "{slide_title}" - Make it UNIQUELY focused, HIGHLY specific, and COMPLETELY different from all previous slides!
     """
     
-    max_attempts = 2
+    max_attempts = 3  # Increased from 2 to 3 attempts
     for attempt in range(max_attempts):
         try:
             response = model.generate_content(prompt)
@@ -556,17 +592,27 @@ You MUST NOT repeat ANY of these phrases or similar wording:
                 
                 slide_data["content"] = cleaned_content
                 
-                # Check for verbatim repetition from original topic
+                # STRICT VALIDATION - Check for verbatim repetition from original topic
                 if has_verbatim_repetition(slide_data["content"], main_topic):
                     if attempt < max_attempts - 1:
-                        print(f"   ⚠️ Attempt {attempt + 1}: Detected verbatim repetition, regenerating...")
+                        print(f"   ⚠️ Attempt {attempt + 1}: Verbatim repetition detected, regenerating...")
                         continue
+                    else:
+                        print(f"   ❌ Failed after {max_attempts} attempts - using fallback")
+                        return generate_fallback_content(slide_title, main_topic)
                 
                 # Check if content is too generic
                 if is_generic_content(slide_data["content"]):
                     if attempt < max_attempts - 1:
-                        print(f"   ⚠️ Attempt {attempt + 1}: Content too generic, regenerating...")
+                        print(f"   ⚠️ Attempt {attempt + 1}: Generic content detected, regenerating...")
                         continue
+                    else:
+                        print(f"   ❌ Failed after {max_attempts} attempts - using fallback")
+                        return generate_fallback_content(slide_title, main_topic)
+                
+                # SUCCESS - content passed all checks
+                if attempt > 0:
+                    print(f"   ✓ Generated quality content on attempt {attempt + 1}")
             
             return slide_data
             
@@ -575,7 +621,7 @@ You MUST NOT repeat ANY of these phrases or similar wording:
                 print(f"   ⚠️ Attempt {attempt + 1} failed: {e}, retrying...")
                 continue
             else:
-                print(f"✗ Error generating slide content after {max_attempts} attempts: {e}")
+                print(f"✗ Error after {max_attempts} attempts: {e}")
                 return generate_fallback_content(slide_title, main_topic)
     
     return generate_fallback_content(slide_title, main_topic)
