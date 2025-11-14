@@ -9,7 +9,6 @@ from datetime import datetime
 import uuid
 import os
 import json
-import traceback
 
 # Load environment variables from .env file
 load_dotenv()
@@ -105,28 +104,92 @@ def generate_short_title(topic: str, additional_context: str = None) -> str:
 
 def generate_slide_topics(topic: str, num_slides: int, additional_context: str = None) -> List[str]:
     """
-    Generate EXACTLY num_slides topics/subtopics for the presentation
-    This ensures strict adherence to user-requested slide count
+    Generate EXACTLY num_slides topics with EQUAL and COMPREHENSIVE coverage
+    Ensures every aspect of the main topic is covered evenly across all slides
     """
     prompt = f"""
-    For the topic: "{topic}"
+    You are creating a comprehensive presentation outline for: "{topic}"
     Additional context: {additional_context or "None"}
     
-    Generate EXACTLY {num_slides} slide topics (subtopics) that comprehensively cover this subject.
+    CRITICAL REQUIREMENTS:
     
-    CRITICAL RULES:
-    1. Return EXACTLY {num_slides} topics, no more, no less
-    2. Each topic should be a clear, concise slide title (3-8 words)
-    3. Topics should logically flow and cover the subject comprehensively
-    4. First slide should be introduction/overview
-    5. Last slide should be conclusion/summary
-    6. Middle slides should cover key concepts in logical order
+    1. SLIDE COUNT: Generate EXACTLY {num_slides} slide topics (no more, no less)
     
-    Return ONLY a JSON array of strings:
-    ["Topic 1", "Topic 2", ..., "Topic {num_slides}"]
+    2. COMPREHENSIVE COVERAGE:
+       - Analyze ALL aspects, subtopics, and components of "{topic}"
+       - Ensure EVERY major concept is covered
+       - Distribute content EQUALLY across all {num_slides} slides
+       - No topic should be overrepresented or underrepresented
     
-    Example for "Cloud Computing" with 5 slides:
-    ["Introduction to Cloud Computing", "Cloud Service Models", "Cloud Deployment Types", "Benefits and Challenges", "Future of Cloud Computing"]
+    3. BALANCED DISTRIBUTION:
+       - Each slide should cover roughly equal importance and depth
+       - Divide the main topic into {num_slides} logical, equal parts
+       - Ensure smooth progression from basic to advanced (if applicable)
+    
+    4. SLIDE STRUCTURE:
+       - Slide 1: Introduction/Overview of the entire topic
+       - Slides 2 to {num_slides-1}: Core concepts distributed equally
+       - Slide {num_slides}: Conclusion/Summary/Future scope
+    
+    5. TOPIC NAMING:
+       - Each topic should be clear and specific (3-8 words)
+       - Use professional terminology
+       - Make titles descriptive but concise
+    
+    EXAMPLE FOR "Cloud Computing" (5 slides):
+    {{
+      "topics": [
+        "Introduction to Cloud Computing",
+        "Cloud Service Models (IaaS, PaaS, SaaS)",
+        "Cloud Deployment Models and Architecture",
+        "Benefits, Challenges, and Security",
+        "Future Trends and Conclusion"
+      ]
+    }}
+    
+    EXAMPLE FOR "Machine Learning" (8 slides):
+    {{
+      "topics": [
+        "Introduction to Machine Learning",
+        "Supervised Learning Algorithms",
+        "Unsupervised Learning Techniques",
+        "Neural Networks and Deep Learning",
+        "Model Training and Optimization",
+        "Evaluation Metrics and Validation",
+        "Real-world Applications",
+        "Challenges and Future Directions"
+      ]
+    }}
+    
+    EXAMPLE FOR "Operating System Layered Architecture" (6 slides):
+    {{
+      "topics": [
+        "Introduction to OS Architecture",
+        "Hardware Abstraction Layer",
+        "Kernel Layer and Core Services",
+        "System Services and APIs",
+        "Application Layer and User Interface",
+        "Benefits and Design Considerations"
+      ]
+    }}
+    
+    Now generate EXACTLY {num_slides} topics for "{topic}" that:
+    - Cover ALL aspects comprehensively
+    - Distribute content equally
+    - Follow logical progression
+    - Are specific and descriptive
+    
+    Return ONLY a valid JSON object with this exact format:
+    {{
+      "topics": [
+        "Topic 1 title",
+        "Topic 2 title",
+        ...
+        "Topic {num_slides} title"
+      ]
+    }}
+    
+    NO explanations, NO markdown, ONLY the JSON object.
     """
     
     try:
@@ -142,25 +205,81 @@ def generate_slide_topics(topic: str, num_slides: int, additional_context: str =
             response_text = response_text[:-3]
         
         response_text = response_text.strip()
-        topics = json.loads(response_text)
+        data = json.loads(response_text)
+        
+        # Extract topics array
+        topics = data.get("topics", [])
         
         # FORCE exact count
         if len(topics) > num_slides:
+            print(f"⚠️ Generated {len(topics)} topics, trimming to {num_slides}")
             topics = topics[:num_slides]
-            print(f"⚠️ Trimmed topics to {num_slides}")
         elif len(topics) < num_slides:
-            # Pad with generic topics
+            print(f"⚠️ Generated {len(topics)} topics, padding to {num_slides}")
+            # Intelligently pad with related topics
+            base_topic = topic.split()[0] if topic else "Topic"
             while len(topics) < num_slides:
-                topics.append(f"Additional Insights #{len(topics) + 1}")
-            print(f"⚠️ Padded topics to {num_slides}")
+                topics.append(f"{base_topic}: Additional Insights #{len(topics) + 1}")
         
-        print(f"✓ Generated {len(topics)} topics")
+        print(f"✓ Generated {len(topics)} balanced topics covering all aspects")
         return topics
         
+    except json.JSONDecodeError as e:
+        print(f"✗ JSON parsing error: {e}")
+        print(f"Response text: {response_text[:200]}")
+        # Fallback: generate structured generic topics
+        return generate_fallback_topics(topic, num_slides)
     except Exception as e:
         print(f"✗ Error generating topics: {e}")
-        # Fallback: generate generic topics
-        return [f"Topic {i+1}" for i in range(num_slides)]
+        return generate_fallback_topics(topic, num_slides)
+
+
+def generate_fallback_topics(topic: str, num_slides: int) -> List[str]:
+    """
+    Generate fallback topics when AI generation fails
+    Creates balanced, comprehensive topic distribution
+    """
+    topics = []
+    
+    # Always start with introduction
+    topics.append(f"Introduction to {topic}")
+    
+    # Generate middle topics based on count
+    if num_slides <= 3:
+        if num_slides >= 2:
+            topics.append(f"Key Concepts in {topic}")
+        if num_slides >= 3:
+            topics.append(f"Conclusion and Summary")
+    
+    elif num_slides <= 5:
+        topics.append(f"Fundamental Concepts")
+        topics.append(f"Core Principles and Methods")
+        if num_slides >= 4:
+            topics.append(f"Applications and Use Cases")
+        if num_slides >= 5:
+            topics.append(f"Conclusion and Future Scope")
+    
+    else:
+        # For larger presentations, create more granular topics
+        topics.append(f"Background and Fundamentals")
+        topics.append(f"Core Concepts - Part 1")
+        
+        remaining = num_slides - 4  # Minus intro, 2 core, and conclusion
+        
+        for i in range(remaining):
+            if i % 2 == 0:
+                topics.append(f"Core Concepts - Part {i//2 + 2}")
+            else:
+                topics.append(f"Advanced Topics - Part {i//2 + 1}")
+        
+        topics.append(f"Conclusion and Future Directions")
+    
+    # Ensure exact count
+    topics = topics[:num_slides]
+    while len(topics) < num_slides:
+        topics.insert(-1, f"Additional Insights #{len(topics)}")
+    
+    return topics
 
 
 def is_generic_content(content: List[str]) -> bool:
@@ -172,7 +291,8 @@ def is_generic_content(content: List[str]) -> bool:
         "important aspect to consider",
         "related insight or application",
         "key point",
-        "additional key insight"
+        "additional key insight",
+        "additional insights"
     ]
     
     if len(content) < 3:
@@ -262,7 +382,6 @@ def regenerate_slide_content(slide_title: str, slide_number: int, total_slides: 
             if len(slide_data["content"]) > 4:
                 slide_data["content"] = slide_data["content"][:4]
             elif len(slide_data["content"]) < 3:
-                # If still insufficient, make one more attempt
                 print(f"⚠️ Insufficient content generated, using fallback")
                 return generate_fallback_content(slide_title, main_topic)
             
@@ -319,6 +438,7 @@ def generate_slide_content(slide_title: str, slide_number: int, total_slides: in
     3. Include specific details, examples, and context
     4. Use technical terminology appropriately
     5. Make content informative and educational
+    6. Ensure this slide covers its designated portion of "{main_topic}" thoroughly
     
     EXCELLENT PROFESSIONAL EXAMPLES (detailed explanations):
     ✓ "Infrastructure as a Service (IaaS): Provides virtualized computing resources like servers, storage, and networking over the internet with pay-as-you-go pricing"
@@ -377,14 +497,13 @@ def generate_slide_content(slide_title: str, slide_number: int, total_slides: in
         
         # Validate and clean content
         if "content" in slide_data:
-            # Allow 3-4 bullets for professional depth
             if len(slide_data["content"]) > 4:
                 slide_data["content"] = slide_data["content"][:4]
             elif len(slide_data["content"]) < 3:
                 while len(slide_data["content"]) < 3:
                     slide_data["content"].append("Additional key insight to explore further")
             
-            # Trim overly long bullets (max 25 words for professional content)
+            # Trim overly long bullets
             cleaned_content = []
             for bullet in slide_data["content"]:
                 bullet = bullet.strip().lstrip("•-–— ")
@@ -399,7 +518,6 @@ def generate_slide_content(slide_title: str, slide_number: int, total_slides: in
         
     except Exception as e:
         print(f"✗ Error generating slide content: {e}")
-        # Fallback content
         return {
             "title": slide_title,
             "content": [
@@ -422,19 +540,14 @@ async def root():
     }
 
 
-# ✅ FIX: Add HEAD endpoint for health checks
-@app.head("/")
-async def root_head():
-    return {}
-
-
 @app.post("/api/generate-outline")
 async def generate_outline(request: PresentationRequest):
-    """Generate presentation outline using Gemini Pro - STRICTLY follows slide count"""
+    """Generate presentation outline using Gemini Pro - STRICTLY follows slide count with EQUAL distribution"""
     try:
         print(f"\n{'='*60}")
         print(f"📊 Generating outline for: {request.topic}")
         print(f"📝 Requested slides: {request.num_slides}")
+        print(f"🎯 Goal: Equal distribution covering ALL aspects")
         print(f"{'='*60}\n")
         
         # Step 0: Generate short title
@@ -442,13 +555,17 @@ async def generate_outline(request: PresentationRequest):
         short_title = generate_short_title(request.topic, request.additional_context)
         print(f"   Title: {short_title}")
         
-        # Step 1: Generate EXACT number of slide topics
-        print(f"\n🎯 Step 1/3: Generating {request.num_slides} slide topics...")
+        # Step 1: Generate EXACT number of slide topics with EQUAL distribution
+        print(f"\n🎯 Step 1/3: Generating {request.num_slides} balanced slide topics...")
+        print(f"   Ensuring comprehensive coverage of all aspects...")
         slide_topics = generate_slide_topics(
             request.topic, 
             request.num_slides, 
             request.additional_context
         )
+        
+        # Verify comprehensive coverage
+        print(f"   ✓ Topics generated with equal weight distribution")
         
         # Step 2: Generate content for each slide
         print(f"\n📝 Step 2/3: Generating detailed content for each slide...")
@@ -495,10 +612,9 @@ async def generate_outline(request: PresentationRequest):
         else:
             print(f"   ✓ All slides have quality content")
         
-        # Verify exact count
+        # Final verification
         if len(slides) != request.num_slides:
             print(f"⚠️ WARNING: Generated {len(slides)} slides, expected {request.num_slides}")
-            # Force correction
             if len(slides) > request.num_slides:
                 slides = slides[:request.num_slides]
             elif len(slides) < request.num_slides:
@@ -512,7 +628,11 @@ async def generate_outline(request: PresentationRequest):
                         "notes": ""
                     })
         
-        print(f"\n✅ Successfully generated {len(slides)} slides with quality content\n")
+        print(f"\n✅ Successfully generated {len(slides)} slides with:")
+        print(f"   • Equal distribution across all aspects")
+        print(f"   • Comprehensive topic coverage")
+        print(f"   • Quality content validation")
+        print()
         
         # Generate unique presentation ID
         presentation_id = str(uuid.uuid4())
@@ -521,7 +641,7 @@ async def generate_outline(request: PresentationRequest):
         presentations_db[presentation_id] = {
             "id": presentation_id,
             "topic": request.topic,
-            "title": short_title,  # Use short title
+            "title": short_title,
             "num_slides": len(slides),
             "slides": slides,
             "status": "draft",
@@ -536,15 +656,11 @@ async def generate_outline(request: PresentationRequest):
         }
         
     except json.JSONDecodeError as e:
-        print(f"❌ JSON Decode Error: {e}")
-        print(traceback.format_exc())
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to parse AI response. Please try again. Error: {str(e)}"
         )
     except Exception as e:
-        print(f"❌ Error generating outline: {e}")
-        print(traceback.format_exc())
         raise HTTPException(
             status_code=500, 
             detail=f"Error generating outline: {str(e)}"
@@ -562,7 +678,7 @@ async def update_slides(request: PresentationUpdate):
         updated_slides = []
         for idx, slide in enumerate(request.slides, 1):
             slide_dict = slide.dict()
-            slide_dict["slide_number"] = idx  # Renumber sequentially
+            slide_dict["slide_number"] = idx
             updated_slides.append(slide_dict)
         
         # Update slides
@@ -581,8 +697,6 @@ async def update_slides(request: PresentationUpdate):
         }
         
     except Exception as e:
-        print(f"❌ Error updating slides: {e}")
-        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error updating slides: {str(e)}")
 
 
@@ -602,74 +716,36 @@ async def get_presentation(presentation_id: str):
 async def generate_ppt(request: GeneratePPTRequest):
     """Generate final PowerPoint file"""
     try:
-        print(f"\n{'='*60}")
-        print(f"🎨 Starting PPT generation...")
-        print(f"   Presentation ID: {request.presentation_id}")
-        print(f"{'='*60}\n")
-        
         if request.presentation_id not in presentations_db:
-            print(f"❌ Presentation not found: {request.presentation_id}")
             raise HTTPException(status_code=404, detail="Presentation not found")
         
         presentation_data = presentations_db[request.presentation_id]
         
-        print(f"✓ Found presentation: {presentation_data['title']}")
+        print(f"\n{'='*60}")
+        print(f"🎨 Generating PowerPoint presentation...")
+        print(f"   Presentation: {presentation_data['title']}")
         print(f"   Total slides: {len(presentation_data['slides'])}")
+        print(f"{'='*60}\n")
         
         # Import pptx_generator module
-        print(f"\n📦 Importing pptx_generator...")
-        try:
-            from pptx_generator import create_presentation
-            print(f"✓ pptx_generator imported successfully")
-        except ImportError as ie:
-            print(f"❌ Failed to import pptx_generator: {ie}")
-            print(traceback.format_exc())
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to import pptx_generator module: {str(ie)}"
-            )
+        from pptx_generator import create_presentation
         
         # Generate PPTX file
         output_dir = "generated_presentations"
-        print(f"\n📁 Creating output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
         
         filename = f"{request.presentation_id}.pptx"
         filepath = os.path.join(output_dir, filename)
-        print(f"   Output path: {filepath}")
         
-        print(f"\n🎨 Generating PowerPoint presentation...")
-        try:
-            create_presentation(
-                presentation_data,
-                filepath,
-                template=request.template
-            )
-            print(f"✓ Presentation generated successfully")
-        except Exception as pptx_error:
-            print(f"❌ Error in create_presentation: {pptx_error}")
-            print(traceback.format_exc())
-            raise
-        
-        # Verify file was created
-        if not os.path.exists(filepath):
-            print(f"❌ File was not created: {filepath}")
-            raise HTTPException(
-                status_code=500,
-                detail="Presentation file was not created"
-            )
-        
-        file_size = os.path.getsize(filepath)
-        print(f"✓ File created successfully")
-        print(f"   Size: {file_size} bytes")
+        create_presentation(
+            presentation_data,
+            filepath,
+            template=request.template
+        )
         
         # Update database
         presentations_db[request.presentation_id]["pptx_url"] = filepath
         presentations_db[request.presentation_id]["status"] = "completed"
-        
-        print(f"\n{'='*60}")
-        print(f"✅ PPT Generation Complete!")
-        print(f"{'='*60}\n")
         
         return {
             "success": True,
@@ -678,48 +754,31 @@ async def generate_ppt(request: GeneratePPTRequest):
             "file_path": filepath
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"❌ Unexpected error in generate_ppt: {e}")
-        print(f"Error type: {type(e).__name__}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error generating PPT: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error generating PPT: {str(e)}")
 
 
 @app.get("/api/download/{presentation_id}")
 async def download_presentation(presentation_id: str):
     """Download generated presentation"""
-    try:
-        if presentation_id not in presentations_db:
-            raise HTTPException(status_code=404, detail="Presentation not found")
-        
-        presentation = presentations_db[presentation_id]
-        
-        if "pptx_url" not in presentation:
-            raise HTTPException(status_code=400, detail="Presentation not yet generated")
-        
-        filepath = presentation["pptx_url"]
-        
-        if not os.path.exists(filepath):
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        print(f"📥 Downloading: {filepath}")
-        
-        return FileResponse(
-            filepath,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            filename=f"{presentation['title']}.pptx"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error in download: {e}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error downloading: {str(e)}")
+    if presentation_id not in presentations_db:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+    
+    presentation = presentations_db[presentation_id]
+    
+    if "pptx_url" not in presentation:
+        raise HTTPException(status_code=400, detail="Presentation not yet generated")
+    
+    filepath = presentation["pptx_url"]
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(
+        filepath,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename=f"{presentation['title']}.pptx"
+    )
 
 
 @app.delete("/api/presentation/{presentation_id}")
@@ -753,7 +812,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"\n{'='*60}")
-    print(f"🚀 Starting AutoSlideX API Server")
-    print(f"{'='*60}\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)

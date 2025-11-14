@@ -21,11 +21,8 @@ class PPTXGenerator:
         self.prs.slide_height = Inches(7.5)
         self.template = template
         self.theme_colors = self._get_theme_colors(template)
-        
-        # ✅ FIX: Initialize ALL API keys
         self.google_api_key = os.getenv("GOOGLE_API_KEY", "")
         self.google_cx = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
-        self.pixabay_api_key = os.getenv("PIXABAY_API_KEY", "")  # ✅ ADDED
         
         # Diagram and technical content detection patterns
         self.diagram_patterns = {
@@ -483,34 +480,25 @@ class PPTXGenerator:
         bg_image = self._get_image(bg_query)
         
         if bg_image:
-            # ✅ FIX: Wrap in try-except to handle image errors
-            try:
-                # Add full background image
-                pic = slide.shapes.add_picture(
-                    bg_image,
-                    Inches(0),
-                    Inches(0),
-                    width=self.prs.slide_width,
-                    height=self.prs.slide_height
-                )
-                slide.shapes._spTree.remove(pic._element)
-                slide.shapes._spTree.insert(2, pic._element)
-                
-                # Add dark overlay for text readability
-                overlay = slide.shapes.add_shape(1, 0, 0, self.prs.slide_width, self.prs.slide_height)
-                overlay.fill.solid()
-                overlay.fill.fore_color.rgb = RGBColor(0, 0, 0)
-                overlay.fill.transparency = 0.4
-                overlay.line.fill.background()
-                slide.shapes._spTree.remove(overlay._element)
-                slide.shapes._spTree.insert(3, overlay._element)
-            except Exception as e:
-                print(f"✗ Failed to add background image: {e}")
-                # Fallback to solid background
-                bg = slide.shapes.add_shape(1, 0, 0, self.prs.slide_width, self.prs.slide_height)
-                bg.fill.solid()
-                bg.fill.fore_color.rgb = self.theme_colors["secondary"]
-                bg.line.fill.background()
+            # Add full background image
+            pic = slide.shapes.add_picture(
+                bg_image,
+                Inches(0),
+                Inches(0),
+                width=self.prs.slide_width,
+                height=self.prs.slide_height
+            )
+            slide.shapes._spTree.remove(pic._element)
+            slide.shapes._spTree.insert(2, pic._element)
+            
+            # Add dark overlay for text readability
+            overlay = slide.shapes.add_shape(1, 0, 0, self.prs.slide_width, self.prs.slide_height)
+            overlay.fill.solid()
+            overlay.fill.fore_color.rgb = RGBColor(0, 0, 0)
+            overlay.fill.transparency = 0.4
+            overlay.line.fill.background()
+            slide.shapes._spTree.remove(overlay._element)
+            slide.shapes._spTree.insert(3, overlay._element)
         else:
             # Fallback solid background
             bg = slide.shapes.add_shape(1, 0, 0, self.prs.slide_width, self.prs.slide_height)
@@ -550,10 +538,9 @@ class PPTXGenerator:
         print(f"   Using query: '{smart_query}'")
         content_image = self._get_image(smart_query)
         
-        # ✅ FIX: Only add image if successfully fetched
         if content_image:
+            # Add image on LEFT side (40% width)
             try:
-                # Add image on LEFT side (40% width)
                 pic = slide.shapes.add_picture(
                     content_image,
                     Inches(0),
@@ -564,7 +551,6 @@ class PPTXGenerator:
                 print(f"✓ Image added to left side")
             except Exception as e:
                 print(f"✗ Failed to add image: {e}")
-                # Continue without image - just use white background
         
         # Add WHITE background on RIGHT side (60% width)
         right_bg = slide.shapes.add_shape(
@@ -659,10 +645,9 @@ class PPTXGenerator:
         print(f"   Using query: '{smart_query}'")
         bg_image = self._get_image(smart_query)
         
-        # ✅ FIX: Only add image if successfully fetched
         if bg_image:
+            # Add image on left 40%
             try:
-                # Add image on left 40%
                 pic = slide.shapes.add_picture(
                     bg_image,
                     Inches(0),
@@ -670,8 +655,8 @@ class PPTXGenerator:
                     width=Inches(4),
                     height=self.prs.slide_height
                 )
-            except Exception as e:
-                print(f"✗ Failed to add image: {e}")
+            except:
+                pass
         
         # White background on right
         right_bg = slide.shapes.add_shape(1, Inches(4), 0, Inches(6), self.prs.slide_height)
