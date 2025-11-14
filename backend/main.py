@@ -9,6 +9,7 @@ from datetime import datetime
 import uuid
 import os
 import json
+import traceback
 
 # Load environment variables from .env file
 load_dotenv()
@@ -421,6 +422,12 @@ async def root():
     }
 
 
+# ✅ FIX: Add HEAD endpoint for health checks
+@app.head("/")
+async def root_head():
+    return {}
+
+
 @app.post("/api/generate-outline")
 async def generate_outline(request: PresentationRequest):
     """Generate presentation outline using Gemini Pro - STRICTLY follows slide count"""
@@ -529,11 +536,15 @@ async def generate_outline(request: PresentationRequest):
         }
         
     except json.JSONDecodeError as e:
+        print(f"❌ JSON Decode Error: {e}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to parse AI response. Please try again. Error: {str(e)}"
         )
     except Exception as e:
+        print(f"❌ Error generating outline: {e}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=500, 
             detail=f"Error generating outline: {str(e)}"
@@ -570,6 +581,8 @@ async def update_slides(request: PresentationUpdate):
         }
         
     except Exception as e:
+        print(f"❌ Error updating slides: {e}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error updating slides: {str(e)}")
 
 
@@ -589,36 +602,74 @@ async def get_presentation(presentation_id: str):
 async def generate_ppt(request: GeneratePPTRequest):
     """Generate final PowerPoint file"""
     try:
+        print(f"\n{'='*60}")
+        print(f"🎨 Starting PPT generation...")
+        print(f"   Presentation ID: {request.presentation_id}")
+        print(f"{'='*60}\n")
+        
         if request.presentation_id not in presentations_db:
+            print(f"❌ Presentation not found: {request.presentation_id}")
             raise HTTPException(status_code=404, detail="Presentation not found")
         
         presentation_data = presentations_db[request.presentation_id]
         
-        print(f"\n{'='*60}")
-        print(f"🎨 Generating PowerPoint presentation...")
-        print(f"   Presentation: {presentation_data['title']}")
+        print(f"✓ Found presentation: {presentation_data['title']}")
         print(f"   Total slides: {len(presentation_data['slides'])}")
-        print(f"{'='*60}\n")
         
         # Import pptx_generator module
-        from pptx_generator import create_presentation
+        print(f"\n📦 Importing pptx_generator...")
+        try:
+            from pptx_generator import create_presentation
+            print(f"✓ pptx_generator imported successfully")
+        except ImportError as ie:
+            print(f"❌ Failed to import pptx_generator: {ie}")
+            print(traceback.format_exc())
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to import pptx_generator module: {str(ie)}"
+            )
         
         # Generate PPTX file
         output_dir = "generated_presentations"
+        print(f"\n📁 Creating output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
         
         filename = f"{request.presentation_id}.pptx"
         filepath = os.path.join(output_dir, filename)
+        print(f"   Output path: {filepath}")
         
-        create_presentation(
-            presentation_data,
-            filepath,
-            template=request.template
-        )
+        print(f"\n🎨 Generating PowerPoint presentation...")
+        try:
+            create_presentation(
+                presentation_data,
+                filepath,
+                template=request.template
+            )
+            print(f"✓ Presentation generated successfully")
+        except Exception as pptx_error:
+            print(f"❌ Error in create_presentation: {pptx_error}")
+            print(traceback.format_exc())
+            raise
+        
+        # Verify file was created
+        if not os.path.exists(filepath):
+            print(f"❌ File was not created: {filepath}")
+            raise HTTPException(
+                status_code=500,
+                detail="Presentation file was not created"
+            )
+        
+        file_size = os.path.getsize(filepath)
+        print(f"✓ File created successfully")
+        print(f"   Size: {file_size} bytes")
         
         # Update database
         presentations_db[request.presentation_id]["pptx_url"] = filepath
         presentations_db[request.presentation_id]["status"] = "completed"
+        
+        print(f"\n{'='*60}")
+        print(f"✅ PPT Generation Complete!")
+        print(f"{'='*60}\n")
         
         return {
             "success": True,
@@ -627,31 +678,48 @@ async def generate_ppt(request: GeneratePPTRequest):
             "file_path": filepath
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating PPT: {str(e)}")
+        print(f"❌ Unexpected error in generate_ppt: {e}")
+        print(f"Error type: {type(e).__name__}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error generating PPT: {str(e)}"
+        )
 
 
 @app.get("/api/download/{presentation_id}")
 async def download_presentation(presentation_id: str):
     """Download generated presentation"""
-    if presentation_id not in presentations_db:
-        raise HTTPException(status_code=404, detail="Presentation not found")
-    
-    presentation = presentations_db[presentation_id]
-    
-    if "pptx_url" not in presentation:
-        raise HTTPException(status_code=400, detail="Presentation not yet generated")
-    
-    filepath = presentation["pptx_url"]
-    
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    return FileResponse(
-        filepath,
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=f"{presentation['title']}.pptx"
-    )
+    try:
+        if presentation_id not in presentations_db:
+            raise HTTPException(status_code=404, detail="Presentation not found")
+        
+        presentation = presentations_db[presentation_id]
+        
+        if "pptx_url" not in presentation:
+            raise HTTPException(status_code=400, detail="Presentation not yet generated")
+        
+        filepath = presentation["pptx_url"]
+        
+        if not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        print(f"📥 Downloading: {filepath}")
+        
+        return FileResponse(
+            filepath,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            filename=f"{presentation['title']}.pptx"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in download: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error downloading: {str(e)}")
 
 
 @app.delete("/api/presentation/{presentation_id}")
@@ -685,4 +753,7 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+    print(f"\n{'='*60}")
+    print(f"🚀 Starting AutoSlideX API Server")
+    print(f"{'='*60}\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
