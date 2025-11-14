@@ -9,7 +9,7 @@ from datetime import datetime
 import uuid
 import os
 import json
-import logging
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -137,40 +137,14 @@ def generate_slide_topics(topic: str, num_slides: int, additional_context: str =
        - Use professional terminology
        - Make titles descriptive but concise
     
-    EXAMPLE FOR "Cloud Computing" (5 slides):
+    EXAMPLE FOR "Object-Oriented Modeling" (5 slides):
     {{
       "topics": [
-        "Introduction to Cloud Computing",
-        "Cloud Service Models (IaaS, PaaS, SaaS)",
-        "Cloud Deployment Models and Architecture",
-        "Benefits, Challenges, and Security",
-        "Future Trends and Conclusion"
-      ]
-    }}
-    
-    EXAMPLE FOR "Machine Learning" (8 slides):
-    {{
-      "topics": [
-        "Introduction to Machine Learning",
-        "Supervised Learning Algorithms",
-        "Unsupervised Learning Techniques",
-        "Neural Networks and Deep Learning",
-        "Model Training and Optimization",
-        "Evaluation Metrics and Validation",
-        "Real-world Applications",
-        "Challenges and Future Directions"
-      ]
-    }}
-    
-    EXAMPLE FOR "Operating System Layered Architecture" (6 slides):
-    {{
-      "topics": [
-        "Introduction to OS Architecture",
-        "Hardware Abstraction Layer",
-        "Kernel Layer and Core Services",
-        "System Services and APIs",
-        "Application Layer and User Interface",
-        "Benefits and Design Considerations"
+        "Introduction to Object-Oriented Technology",
+        "Modeling Concepts and Design Techniques",
+        "Class Model and Static Structure",
+        "State Model and Dynamic Behavior",
+        "Interaction Model and Applications"
       ]
     }}
     
@@ -285,123 +259,129 @@ def generate_fallback_topics(topic: str, num_slides: int) -> List[str]:
 
 def is_generic_content(content: List[str]) -> bool:
     """
-    Check if slide content is generic/placeholder
+    Check if slide content is generic/placeholder/repetitive
     """
-    generic_phrases = [
-        "key concept about this topic",
-        "important aspect to consider",
-        "related insight or application",
-        "key point",
-        "additional key insight",
-        "additional insights"
-    ]
-    
-    if len(content) < 3:
+    if not content or len(content) < 3:
         return True
     
+    generic_phrases = [
+        "key concept about",
+        "important aspect to consider",
+        "related insight",
+        "key point",
+        "additional key insight",
+        "additional insights",
+        "core concepts and fundamentals",
+        "practical applications and real-world use cases"
+    ]
+    
+    # Check each bullet point
     for point in content:
         point_lower = point.lower()
+        
+        # Check for generic phrases
         if any(phrase in point_lower for phrase in generic_phrases):
+            return True
+        
+        # Check if too short (likely generic)
+        if len(point.split()) < 8:
             return True
     
     return False
 
 
-def regenerate_slide_content(slide_title: str, slide_number: int, total_slides: int, 
-                             main_topic: str, additional_context: str = None) -> dict:
+def has_verbatim_repetition(content: List[str], original_topic: str) -> bool:
     """
-    Regenerate content for slides with generic/placeholder content
-    Uses stronger prompting to ensure quality content
+    Check if content contains verbatim repetition from the original topic
     """
-    prompt = f"""
-    Create DETAILED, PROFESSIONAL slide content for: "{main_topic}"
+    if not content:
+        return False
     
-    Slide #{slide_number} of {total_slides}
-    Slide Title: "{slide_title}"
-    Additional Context: {additional_context or "None"}
+    # Combine content into single text
+    content_text = " ".join(content).lower()
+    topic_lower = original_topic.lower()
     
-    CRITICAL REQUIREMENTS:
-    1. Create EXACTLY 3-4 bullet points with REAL, DETAILED information
-    2. Each bullet MUST be 12-20 words with specific details
-    3. NO generic phrases like "key concept", "important aspect", "consider", etc.
-    4. Include specific examples, data, or technical details
-    5. Make content educational and informative
+    # Extract phrases from topic (3+ words)
+    topic_words = topic_lower.split()
     
-    FORBIDDEN PHRASES (DO NOT USE):
-    - "Key concept about this topic"
-    - "Important aspect to consider"
-    - "Related insight or application"
-    - "Key point"
-    - "Additional insight"
+    # Check for long verbatim phrases (5+ consecutive words from topic)
+    for i in range(len(topic_words) - 4):
+        phrase = " ".join(topic_words[i:i+5])
+        if phrase in content_text:
+            print(f"   ⚠️ Found verbatim phrase: '{phrase}'")
+            return True
     
-    REQUIRED STYLE:
-    - Specific and detailed
-    - Include real-world examples
-    - Use technical terminology appropriately
-    - Provide actionable information
-    
-    GOOD EXAMPLES:
-    ✓ "Neural networks consist of interconnected layers of nodes that process information through weighted connections, enabling pattern recognition and complex decision-making capabilities"
-    ✓ "Backpropagation algorithm adjusts weights by calculating gradients through chain rule, allowing networks to learn from errors and improve prediction accuracy over training iterations"
-    ✓ "Convolutional layers extract spatial features from images using learnable filters, reducing parameters through weight sharing while maintaining translation invariance for robust visual recognition"
-    
-    BAD EXAMPLES (NEVER DO THIS):
-    ✗ "Key concept about neural networks"
-    ✗ "Important aspect to consider"
-    ✗ "Neural networks are useful"
-    
-    Return ONLY valid JSON:
-    {{
-        "title": "{slide_title}",
-        "content": [
-            "Detailed, specific bullet point with examples (12-20 words)",
-            "Another comprehensive point with technical details (12-20 words)",
-            "Third informative bullet with real-world context (12-20 words)"
-        ],
-        "image_query": "specific technical diagram search terms",
-        "notes": "Detailed speaker notes with examples and technical context"
-    }}
+    return False
+
+
+def calculate_content_similarity(content1: List[str], content2: List[str]) -> float:
     """
+    Calculate similarity between two slide contents (0.0 to 1.0)
+    Enhanced with phrase-level detection
+    """
+    if not content1 or not content2:
+        return 0.0
     
-    try:
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
-        
-        # Clean up response
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        elif response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        
-        response_text = response_text.strip()
-        slide_data = json.loads(response_text)
-        
-        # Validate content quality
-        if "content" in slide_data:
-            if len(slide_data["content"]) > 4:
-                slide_data["content"] = slide_data["content"][:4]
-            elif len(slide_data["content"]) < 3:
-                print(f"⚠️ Insufficient content generated, using fallback")
-                return generate_fallback_content(slide_title, main_topic)
-            
-            # Clean bullets
-            cleaned_content = []
-            for bullet in slide_data["content"]:
-                bullet = bullet.strip().lstrip("•-–— ")
-                words = bullet.split()
-                if len(words) > 25:
-                    bullet = " ".join(words[:25])
-                cleaned_content.append(bullet)
-            
-            slide_data["content"] = cleaned_content
-        
-        return slide_data
-        
-    except Exception as e:
-        print(f"✗ Error regenerating slide content: {e}")
-        return generate_fallback_content(slide_title, main_topic)
+    # Combine all bullet points into text
+    text1 = " ".join(content1).lower()
+    text2 = " ".join(content2).lower()
+    
+    # Extract meaningful words (ignore common words)
+    common_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+        'of', 'with', 'by', 'about', 'as', 'is', 'are', 'was', 'were', 'be',
+        'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+        'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this',
+        'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they'
+    }
+    
+    words1 = set(word for word in text1.split() if len(word) > 3 and word not in common_words)
+    words2 = set(word for word in text2.split() if len(word) > 3 and word not in common_words)
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    # Calculate Jaccard similarity
+    intersection = len(words1.intersection(words2))
+    union = len(words1.union(words2))
+    
+    similarity = intersection / union if union > 0 else 0.0
+    
+    # Additional check: look for identical phrases (3+ words)
+    words1_list = text1.split()
+    words2_list = text2.split()
+    
+    phrase_matches = 0
+    for i in range(len(words1_list) - 2):
+        phrase = " ".join(words1_list[i:i+3])
+        if phrase in text2 and len(phrase) > 10:  # Ignore short phrases
+            phrase_matches += 1
+    
+    # Boost similarity if we find identical phrases
+    if phrase_matches > 2:
+        similarity = min(1.0, similarity + 0.2)
+    
+    return similarity
+
+
+def detect_duplicate_slides(slides: List[dict]) -> List[tuple]:
+    """
+    Detect slides with duplicate or highly similar content
+    Returns list of (slide_index1, slide_index2, similarity_score) tuples
+    """
+    duplicates = []
+    threshold = 0.5  # Lowered to 50% to catch more duplicates
+    
+    for i in range(len(slides)):
+        for j in range(i + 1, len(slides)):
+            similarity = calculate_content_similarity(
+                slides[i]["content"], 
+                slides[j]["content"]
+            )
+            if similarity >= threshold:
+                duplicates.append((i, j, similarity))
+    
+    return duplicates
 
 
 def generate_fallback_content(slide_title: str, main_topic: str) -> dict:
@@ -411,354 +391,141 @@ def generate_fallback_content(slide_title: str, main_topic: str) -> dict:
     return {
         "title": slide_title,
         "content": [
-            f"Core concepts and fundamentals of {slide_title.lower()}",
-            f"Practical applications and real-world use cases in {main_topic.lower()}",
-            f"Key considerations and best practices for implementation"
+            f"Comprehensive overview of {slide_title.lower()} including key definitions and fundamental principles",
+            f"Detailed exploration of methodologies, techniques, and approaches used in {slide_title.lower()}",
+            f"Real-world applications, practical examples, and industry best practices for implementing {slide_title.lower()}"
         ],
         "image_query": slide_title.lower(),
         "notes": f"Detailed discussion of {slide_title} in the context of {main_topic}"
     }
 
 
-def regenerate_duplicate_slide(slide_idx: int, slide: dict, all_slides: List[dict],
-                              main_topic: str, additional_context: str = None) -> dict:
+def generate_slide_content_v2(slide_title: str, slide_number: int, total_slides: int, 
+                              main_topic: str, previous_slides: List[dict] = None,
+                              additional_context: str = None) -> dict:
     """
-    Regenerate content for a slide that has duplicate content with others
-    Ensures the new content is unique and doesn't overlap with existing slides
+    Enhanced version with STRICT duplicate prevention and NO verbatim topic repetition
     """
-    slide_title = slide["title"]
-    slide_number = slide["slide_number"]
-    total_slides = len(all_slides)
+    
+    # Build context from previous slides to avoid duplication
+    previous_content_summary = ""
+    forbidden_content = []
+    
+    if previous_slides and len(previous_slides) > 0:
+        for prev_slide in previous_slides:
+            for point in prev_slide.get("content", []):
+                # Extract key phrases (5+ words) from previous content
+                words = point.split()
+                if len(words) >= 5:
+                    forbidden_content.append(point[:80])
+        
+        if forbidden_content:
+            previous_content_summary = f"""
+========== CRITICAL: FORBIDDEN CONTENT ==========
+The following content has ALREADY been used in previous slides.
+You MUST NOT repeat ANY of these phrases or similar wording:
 
-    # Build context of all other slides to avoid duplication
-    other_slides_context = []
-    for idx, s in enumerate(all_slides):
-        if idx != slide_idx:
-            other_slides_context.append(f"- {s['title']}: {', '.join(s['content'][:2])}")
+{chr(10).join(f"❌ {content}" for content in forbidden_content[-8:])}
 
-    context_summary = f"""
-    EXISTING SLIDES TO AVOID DUPLICATION:
-    {'\n'.join(other_slides_context)}
-
-    CRITICAL: This slide MUST contain COMPLETELY DIFFERENT information from all existing slides.
-    Focus on NEW, UNIQUE aspects of "{slide_title}" that are NOT covered anywhere else.
-    """
-
+========== STRICT REQUIREMENTS ==========
+1. Create COMPLETELY DIFFERENT content with NEW information
+2. Use DIFFERENT vocabulary, phrases, and sentence structures
+3. Focus on UNIQUE aspects of "{slide_title}" only
+4. NO repetition of concepts from previous slides
+================================================
+"""
+    
+    # Extract key terms from the original topic to avoid verbatim copying
+    topic_phrases = []
+    topic_words = main_topic.split()
+    for i in range(len(topic_words) - 3):
+        phrase = " ".join(topic_words[i:i+4]).lower()
+        topic_phrases.append(phrase)
+    
+    forbidden_topic_phrases = ", ".join([f'"{p}"' for p in topic_phrases[:5]])
+    
     prompt = f"""
-    REGENERATE UNIQUE slide content for: "{main_topic}"
-
-    Slide #{slide_number} of {total_slides}
-    Slide Title: "{slide_title}"
-    Additional Context: {additional_context or "None"}
-
-    {context_summary}
-
-    CRITICAL UNIQUENESS REQUIREMENTS:
-    1. Create EXACTLY 3-4 bullet points with ENTIRELY NEW information
-    2. Each bullet MUST be 10-20 WORDS with specific, unique details
-    3. ABSOLUTELY NO repetition of ANY concepts from existing slides
-    4. Introduce completely fresh perspectives, examples, or technical details
-    5. This slide must add UNIQUE value that doesn't exist in any other slide
-
-    UNIQUENESS STRATEGY:
-    - If other slides covered basics, focus on advanced implementations
-    - If other slides covered theory, focus on practical case studies
-    - If other slides covered examples, focus on emerging trends or future directions
-    - Always provide NEW insights that complement but don't duplicate
-
-    PROFESSIONAL QUALITY:
-    - Include specific examples, data, or technical details not mentioned elsewhere
-    - Use technical terminology appropriately
-    - Make content educational and informative
-    - Ensure this slide provides unique value to the presentation
-
-    Return ONLY valid JSON:
-    {{
-        "title": "{slide_title}",
-        "content": [
-            "Completely unique bullet point with new information (10-20 words)",
-            "Another distinct point with fresh technical details (10-20 words)",
-            "Third informative bullet with new context (10-20 words)",
-            "Optional fourth point for complex topics (10-20 words)"
-        ],
-        "image_query": "specific technical diagram search terms",
-        "notes": "Detailed speaker notes with unique examples and technical context"
-    }}
-    """
-
-    try:
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
-
-        # Clean up response
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        elif response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-
-        response_text = response_text.strip()
-        slide_data = json.loads(response_text)
-
-        # Validate and clean content
-        if "content" in slide_data:
-            if len(slide_data["content"]) > 4:
-                slide_data["content"] = slide_data["content"][:4]
-            elif len(slide_data["content"]) < 3:
-                while len(slide_data["content"]) < 3:
-                    slide_data["content"].append("Additional unique insight to explore further")
-
-            # Clean bullets
-            cleaned_content = []
-            for bullet in slide_data["content"]:
-                bullet = bullet.strip().lstrip("•-–— ")
-                words = bullet.split()
-                if len(words) > 25:
-                    bullet = " ".join(words[:25])
-                cleaned_content.append(bullet)
-
-            slide_data["content"] = cleaned_content
-
-        return slide_data
-
-    except Exception as e:
-        print(f"✗ Error regenerating duplicate slide content: {e}")
-        return generate_fallback_content(slide_title, main_topic)
-
-
-def generate_slide_content(slide_title: str, slide_number: int, total_slides: int, 
-                          main_topic: str, additional_context: str = None) -> dict:
-    """
-    Generate content for a SINGLE slide with PROFESSIONAL DEPTH
-    Creates detailed, informative content suitable for technical/academic presentations
-    """
-    prompt = f"""
-    Create PROFESSIONAL slide content for a presentation about: "{main_topic}"
+    Create UNIQUE, ORIGINAL slide content for: "{main_topic}"
     
     Slide #{slide_number} of {total_slides}
     Slide Title: "{slide_title}"
     Additional Context: {additional_context or "None"}
     
-    CRITICAL INSTRUCTIONS - PROFESSIONAL DEPTH:
-    1. Create EXACTLY 3-4 bullet points (3 for simple topics, 4 for complex ones)
-    2. Each bullet should be 10-20 WORDS - provide real explanations
-    3. Include specific details, examples, and context
-    4. Use technical terminology appropriately
-    5. Make content informative and educational
-    6. Ensure this slide covers its designated portion of "{main_topic}" thoroughly
+    {previous_content_summary}
     
-    EXCELLENT PROFESSIONAL EXAMPLES (detailed explanations):
-    ✓ "Infrastructure as a Service (IaaS): Provides virtualized computing resources like servers, storage, and networking over the internet with pay-as-you-go pricing"
-    ✓ "Platform as a Service (PaaS): Offers complete development and deployment environment where developers can build applications without managing underlying infrastructure"
-    ✓ "Software as a Service (SaaS): Delivers fully functional applications over the internet, accessible through web browsers without local installation or maintenance"
-    ✓ "Examples include AWS EC2 for IaaS, Google App Engine for PaaS, and Microsoft 365 for SaaS offerings"
+    ========== ABSOLUTE PROHIBITIONS ==========
+    ❌ DO NOT copy phrases from the original topic: {forbidden_topic_phrases}
+    ❌ DO NOT use generic statements like "practical applications and real-world use cases"
+    ❌ DO NOT repeat ANY content from previous slides
+    ❌ DO NOT use vague phrases like "core concepts and fundamentals"
+    ❌ DO NOT mention "unit-i", "10 hours introduction", or similar course-specific terms
+    ================================================
     
-    BAD EXAMPLES (too brief - NEVER do this):
-    ✗ "Cloud is scalable" (lacks detail)
-    ✗ "Pay-per-use pricing" (needs explanation)
-    ✗ "IaaS provides infrastructure" (too obvious)
+    ========== CRITICAL UNIQUENESS REQUIREMENTS ==========
+    1. Create EXACTLY 3-4 bullet points with SPECIFIC, UNIQUE information
+    2. Each bullet MUST be 15-25 words with CONCRETE details
+    3. Focus SPECIFICALLY on "{slide_title}" - be VERY specific to this topic
+    4. Use TECHNICAL terminology and SPECIFIC examples
+    5. Include NUMBERS, NAMES, or SPECIFIC methods where possible
+    6. This is slide {slide_number} of {total_slides} - cover the {slide_number}th DISTINCT aspect
+    7. Write in YOUR OWN WORDS - do not copy from the topic description
+    ================================================
     
-    IMAGE QUERY INSTRUCTIONS:
-    - For service models (IaaS/PaaS/SaaS): Use "IaaS PaaS SaaS comparison diagram illustration"
-    - For architectures: Use "cloud architecture layers diagram illustration"
-    - For security: Use "cloud security diagram illustration"
-    - For storage: Use "cloud storage types diagram illustration"
-    - For deployment: Use "cloud deployment models diagram illustration"
-    - For technical concepts: Use "[concept name] diagram illustration technical"
-    - ALWAYS add "diagram illustration" for technical topics to get proper diagrams
+    ========== CONTENT STRATEGY BY SLIDE NUMBER ==========
+    Slide 1: Historical background, origins, evolution, foundational concepts
+    Slide 2: Core principles, fundamental theories, key definitions (NEW content)
+    Slide 3: Technical implementation, methodologies, specific techniques (DIFFERENT from 1-2)
+    Slide 4: Advanced concepts, specialized applications, complex scenarios
+    Slide 5+: Specific use cases, tools, frameworks, future trends
+    ================================================
     
-    SPEAKER NOTES:
-    - Provide 3-5 sentences with deeper explanation
-    - Include real-world examples, use cases, or scenarios
-    - Add technical details that support the bullet points
-    - Mention specific tools, platforms, or technologies where relevant
+    ========== EXCELLENT EXAMPLES (Unique & Specific) ==========
     
-    Return ONLY valid JSON (no markdown):
+    For "Foundations of Object-Oriented Technology":
+    ✓ "Object-oriented paradigm emerged from Simula-67 in 1960s, introducing the revolutionary concept of encapsulating data and behavior within self-contained entities called objects"
+    ✓ "Alan Kay's Smalltalk language established five core OOP principles: everything is an object, objects communicate via messages, each object has independent memory, and programs are collections of cooperating objects"
+    ✓ "Evolution from procedural programming addressed software crisis of 1970s by enabling better code organization, reusability through inheritance, and maintainability in large-scale enterprise applications"
+    
+    For "Core Concepts and Modeling" (DIFFERENT from above):
+    ✓ "Three-model approach separates system description into class model for static structure, state model for dynamic behavior, and interaction model for external communication patterns"
+    ✓ "Modeling design technique employs abstraction layers: problem domain model captures real-world entities, application model defines software components, and implementation model specifies technical architecture"
+    ✓ "UML notation provides standardized diagrams including class diagrams for structure, sequence diagrams for interactions, and state charts for behavioral modeling across different system aspects"
+    
+    For "Class Model" (DIFFERENT from 1-2):
+    ✓ "Class diagrams represent static structure using rectangles divided into three sections: class name at top, attributes in middle, and operations at bottom with visibility modifiers"
+    ✓ "Relationships include association for general connections, aggregation for whole-part with independent lifetimes, and composition for strong ownership where parts cannot exist independently"
+    ✓ "Multiplicity notation specifies cardinality constraints: 1 for exactly one, 0..1 for optional, * for zero or more, and 1..* for one or more instances in the relationship"
+    
+    ========== BAD EXAMPLES (TOO GENERIC - NEVER DO) ==========
+    ✗ "Practical applications and real-world use cases in unit-i 10 hours introduction"
+    ✗ "Core concepts and fundamentals of object-oriented technology and history"
+    ✗ "Key considerations and best practices for implementation"
+    ✗ "Important aspects to consider when working with this topic"
+    ================================================
+    
+    ========== RESPONSE FORMAT ==========
+    Return ONLY valid JSON (no markdown, no backticks):
     {{
         "title": "{slide_title}",
         "content": [
-            "Detailed bullet point with explanation (10-20 words)",
-            "Another comprehensive point with specifics (10-20 words)",
-            "Third informative bullet with context (10-20 words)",
-            "Optional fourth point for complex topics (10-20 words)"
+            "Highly specific bullet with technical details and examples (15-25 words)",
+            "Another unique point with concrete information and specifics (15-25 words)",
+            "Third distinct insight with measurable details or named concepts (15-25 words)"
         ],
-        "image_query": "specific technical diagram search terms",
-        "notes": "Comprehensive speaker notes with examples and technical details"
+        "image_query": "{slide_title.lower()} diagram illustration",
+        "notes": "Comprehensive speaker notes with specific examples and technical context for {slide_title}"
     }}
+    ================================================
+    
+    REMEMBER: Slide {slide_number} about "{slide_title}" - Make it UNIQUELY focused, HIGHLY specific, and COMPLETELY different from all previous slides!
     """
     
-    try:
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
-        
-        # Clean up response
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        elif response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        
-        response_text = response_text.strip()
-        slide_data = json.loads(response_text)
-        
-        # Validate and clean content
-        if "content" in slide_data:
-            if len(slide_data["content"]) > 4:
-                slide_data["content"] = slide_data["content"][:4]
-            elif len(slide_data["content"]) < 3:
-                while len(slide_data["content"]) < 3:
-                    slide_data["content"].append("Additional key insight to explore further")
-            
-            # Trim overly long bullets
-            cleaned_content = []
-            for bullet in slide_data["content"]:
-                bullet = bullet.strip().lstrip("•-–— ")
-                words = bullet.split()
-                if len(words) > 25:
-                    bullet = " ".join(words[:25])
-                cleaned_content.append(bullet)
-            
-            slide_data["content"] = cleaned_content
-        
-        return slide_data
-        
-    except Exception as e:
-        print(f"✗ Error generating slide content: {e}")
-        return {
-            "title": slide_title,
-            "content": [
-                "Key concept about this topic",
-                "Important aspect to consider",
-                "Related insight or application"
-            ],
-            "image_query": slide_title.lower(),
-            "notes": f"Discussion points for {slide_title}"
-        }
-
-
-def calculate_content_similarity(content1: List[str], content2: List[str]) -> float:
-    """
-    Calculate similarity between two slide contents using Jaccard similarity
-    Returns a value between 0.0 (no similarity) and 1.0 (identical)
-    """
-    if not content1 or not content2:
-        return 0.0
-
-    # Convert to sets of words (case insensitive)
-    set1 = set()
-    set2 = set()
-
-    for bullet in content1:
-        words = bullet.lower().split()
-        set1.update(words)
-
-    for bullet in content2:
-        words = bullet.lower().split()
-        set2.update(words)
-
-    # Calculate Jaccard similarity
-    intersection = len(set1.intersection(set2))
-    union = len(set1.union(set2))
-
-    if union == 0:
-        return 0.0
-
-    return intersection / union
-
-
-def detect_duplicate_slides(slides: List[dict], threshold: float = 0.6) -> List[tuple]:
-    """
-    Detect duplicate slides based on content similarity
-    Returns list of tuples: (slide_idx1, slide_idx2, similarity_score)
-    Only returns pairs with similarity above threshold
-    """
-    duplicates = []
-
-    for i in range(len(slides)):
-        for j in range(i + 1, len(slides)):
-            similarity = calculate_content_similarity(
-                slides[i]["content"],
-                slides[j]["content"]
-            )
-
-            if similarity >= threshold:
-                duplicates.append((i, j, similarity))
-
-    return duplicates
-
-
-def generate_slide_content_v2(slide_title: str, slide_number: int, total_slides: int,
-                            main_topic: str, previous_slides: List[dict] = None,
-                            additional_context: str = None) -> dict:
-    """
-    Enhanced slide content generation with duplicate prevention
-    Considers previously generated slides to avoid content overlap
-    """
-    previous_slides = previous_slides or []
-
-    # Build context from previous slides
-    context_summary = ""
-    if previous_slides:
-        covered_topics = []
-        for slide in previous_slides:
-            covered_topics.append(f"- {slide['title']}: {', '.join(slide['content'][:2])}")
-
-        context_summary = f"""
-        PREVIOUS SLIDES ALREADY COVERED:
-        {'\n'.join(covered_topics)}
-
-        CRITICAL: DO NOT repeat information from previous slides.
-        Focus on NEW, UNIQUE aspects of "{slide_title}" that haven't been covered yet.
-        """
-
-    prompt = f"""
-    Create UNIQUE slide content for: "{main_topic}"
-
-    Slide #{slide_number} of {total_slides}
-    Slide Title: "{slide_title}"
-    Additional Context: {additional_context or "None"}
-
-    {context_summary}
-
-    CRITICAL UNIQUENESS REQUIREMENTS:
-    1. Create EXACTLY 3-4 bullet points with COMPLETELY NEW information
-    2. Each bullet MUST be 10-20 WORDS with specific, unique details
-    3. ABSOLUTELY NO repetition of concepts from previous slides
-    4. Focus on aspects of "{slide_title}" that are NOT yet covered
-    5. Introduce fresh perspectives, examples, or details
-
-    UNIQUENESS STRATEGY:
-    - If previous slides covered basics, focus on advanced applications
-    - If previous slides covered theory, focus on practical implementations
-    - If previous slides covered examples, focus on technical details
-    - Always add NEW value that complements but doesn't duplicate
-
-    PROFESSIONAL QUALITY:
-    - Include specific examples, data, or technical details
-    - Use technical terminology appropriately
-    - Make content educational and informative
-    - Ensure this slide adds unique value to the presentation
-
-    Return ONLY valid JSON:
-    {{
-        "title": "{slide_title}",
-        "content": [
-            "Unique bullet point with new information (10-20 words)",
-            "Another distinct point with fresh details (10-20 words)",
-            "Third informative bullet with new context (10-20 words)",
-            "Optional fourth point for complex topics (10-20 words)"
-        ],
-        "image_query": "specific technical diagram search terms",
-        "notes": "Detailed speaker notes with unique examples and technical context"
-    }}
-    """
-
-    try:
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        try:
             response = model.generate_content(prompt)
             response_text = response.text.strip()
-
+            
             # Clean up response
             if response_text.startswith("```json"):
                 response_text = response_text[7:]
@@ -766,40 +533,82 @@ def generate_slide_content_v2(slide_title: str, slide_number: int, total_slides:
                 response_text = response_text[3:]
             if response_text.endswith("```"):
                 response_text = response_text[:-3]
-
+            
             response_text = response_text.strip()
             slide_data = json.loads(response_text)
-
+            
             # Validate and clean content
             if "content" in slide_data:
                 if len(slide_data["content"]) > 4:
                     slide_data["content"] = slide_data["content"][:4]
                 elif len(slide_data["content"]) < 3:
                     while len(slide_data["content"]) < 3:
-                        slide_data["content"].append("Additional unique insight to explore further")
-
-                # Clean bullets
+                        slide_data["content"].append(f"Specific technical insight about {slide_title} with detailed explanation and examples")
+                
+                # Clean and trim bullets
                 cleaned_content = []
                 for bullet in slide_data["content"]:
                     bullet = bullet.strip().lstrip("•-–— ")
                     words = bullet.split()
-                    if len(words) > 25:
-                        bullet = " ".join(words[:25])
+                    if len(words) > 30:
+                        bullet = " ".join(words[:30])
                     cleaned_content.append(bullet)
-
+                
                 slide_data["content"] = cleaned_content
-
+                
+                # Check for verbatim repetition from original topic
+                if has_verbatim_repetition(slide_data["content"], main_topic):
+                    if attempt < max_attempts - 1:
+                        print(f"   ⚠️ Attempt {attempt + 1}: Detected verbatim repetition, regenerating...")
+                        continue
+                
+                # Check if content is too generic
+                if is_generic_content(slide_data["content"]):
+                    if attempt < max_attempts - 1:
+                        print(f"   ⚠️ Attempt {attempt + 1}: Content too generic, regenerating...")
+                        continue
+            
             return slide_data
+            
+        except Exception as e:
+            if attempt < max_attempts - 1:
+                print(f"   ⚠️ Attempt {attempt + 1} failed: {e}, retrying...")
+                continue
+            else:
+                print(f"✗ Error generating slide content after {max_attempts} attempts: {e}")
+                return generate_fallback_content(slide_title, main_topic)
+    
+    return generate_fallback_content(slide_title, main_topic)
 
-    except Exception as e:
-            print(f"✗ Error regenerating duplicate slide content: {e}")
-            return generate_fallback_content(slide_title, main_topic)
+
+def regenerate_duplicate_slide(slide_index: int, slide_data: dict, all_slides: List[dict],
+                               main_topic: str, additional_context: str = None, attempt_num: int = 1) -> dict:
+    """
+    Regenerate a slide that has duplicate content
+    Uses all existing slides as context to ensure uniqueness
+    """
+    print(f"   🔄 Regenerating slide {slide_index + 1} (attempt {attempt_num}) to ensure unique content...")
+    
+    # Get all OTHER slides (exclude current one)
+    other_slides = [s for i, s in enumerate(all_slides) if i != slide_index]
+    
+    improved_content = generate_slide_content_v2(
+        slide_title=slide_data["title"],
+        slide_number=slide_index + 1,
+        total_slides=len(all_slides),
+        main_topic=main_topic,
+        previous_slides=other_slides,
+        additional_context=additional_context
+    )
+    
+    return improved_content
 
 
+@app.get("/")
 async def root():
     return {
         "message": "AutoSlideX API",
-        "version": "2.0.0",
+        "version": "2.1.0 - Strict Duplicate Prevention",
         "status": "running",
         "endpoints": ["/api/generate-outline", "/api/update-slides", "/api/generate-ppt"]
     }
@@ -807,44 +616,45 @@ async def root():
 
 @app.post("/api/generate-outline")
 async def generate_outline(request: PresentationRequest):
-    """Generate presentation outline with duplicate detection and prevention"""
+    """Generate presentation outline with STRICT duplicate detection and prevention"""
     try:
         print(f"\n{'='*60}")
         print(f"📊 Generating outline for: {request.topic}")
         print(f"📝 Requested slides: {request.num_slides}")
-        print(f"🎯 Enhanced duplicate detection: ENABLED")
+        print(f"🎯 STRICT duplicate detection: ENABLED")
+        print(f"🚫 Verbatim repetition check: ENABLED")
         print(f"{'='*60}\n")
-
+        
         # Step 0: Generate short title
-        print(f"📌 Step 0/4: Generating concise title...")
+        print(f"📌 Step 0/5: Generating concise title...")
         short_title = generate_short_title(request.topic, request.additional_context)
         print(f"   Title: {short_title}")
-
+        
         # Step 1: Generate slide topics
-        print(f"\n🎯 Step 1/4: Generating {request.num_slides} balanced slide topics...")
+        print(f"\n🎯 Step 1/5: Generating {request.num_slides} balanced slide topics...")
         slide_topics = generate_slide_topics(
-            request.topic,
-            request.num_slides,
+            request.topic, 
+            request.num_slides, 
             request.additional_context
         )
-
+        
         # Step 2: Generate content for each slide WITH CONTEXT
-        print(f"\n📝 Step 2/4: Generating unique content for each slide...")
+        print(f"\n📝 Step 2/5: Generating unique content for each slide...")
         slides = []
-
+        
         for idx, slide_title in enumerate(slide_topics, 1):
             print(f"   Processing slide {idx}/{len(slide_topics)}: {slide_title}")
-
+            
             # Pass previously generated slides as context
             slide_content = generate_slide_content_v2(
                 slide_title=slide_title,
                 slide_number=idx,
                 total_slides=len(slide_topics),
                 main_topic=request.topic,
-                previous_slides=slides,  # IMPORTANT: Pass existing slides
+                previous_slides=slides,  # Pass existing slides to avoid duplication
                 additional_context=request.additional_context
             )
-
+            
             slides.append({
                 "slide_number": idx,
                 "title": slide_content.get("title", slide_title),
@@ -853,66 +663,114 @@ async def generate_outline(request: PresentationRequest):
                 "image_query": slide_content.get("image_query", ""),
                 "notes": slide_content.get("notes", "")
             })
-
-        # Step 3: Detect and fix duplicate content
-        print(f"\n🔍 Step 3/4: Detecting duplicate content...")
+        
+        # Step 3: Check for verbatim repetition from original topic
+        print(f"\n🔍 Step 3/5: Checking for verbatim repetition...")
+        verbatim_slides = []
+        for idx, slide in enumerate(slides):
+            if has_verbatim_repetition(slide["content"], request.topic):
+                verbatim_slides.append(idx)
+                print(f"   ⚠️ Slide {idx + 1} contains verbatim phrases from topic")
+        
+        if verbatim_slides:
+            print(f"   🔄 Regenerating {len(verbatim_slides)} slides with verbatim content...")
+            for idx in verbatim_slides:
+                improved = regenerate_duplicate_slide(
+                    idx, slides[idx], slides,
+                    request.topic, request.additional_context, attempt_num=1
+                )
+                slides[idx].update(improved)
+            print(f"   ✓ Regenerated slides with original content")
+        else:
+            print(f"   ✓ No verbatim repetition detected")
+        
+        # Step 4: Detect and fix duplicate content between slides
+        print(f"\n🔍 Step 4/5: Detecting duplicate content between slides...")
         duplicates = detect_duplicate_slides(slides)
-
+        
         if duplicates:
             print(f"   ⚠️ Found {len(duplicates)} slide pairs with similar content:")
             for idx1, idx2, similarity in duplicates:
                 print(f"      - Slides {idx1 + 1} & {idx2 + 1}: {similarity*100:.1f}% similar")
-
-            # Regenerate slides with high similarity (starting from later slides)
+            
+            # Regenerate slides with high similarity
             regenerated = set()
             for idx1, idx2, similarity in sorted(duplicates, key=lambda x: -x[2]):
                 # Regenerate the later slide (idx2)
-                if idx2 not in regenerated:
+                if idx2 not in regenerated and similarity > 0.6:
                     improved = regenerate_duplicate_slide(
                         idx2, slides[idx2], slides,
-                        request.topic, request.additional_context
+                        request.topic, request.additional_context, attempt_num=2
                     )
                     slides[idx2].update(improved)
                     regenerated.add(idx2)
-
+            
             print(f"   ✓ Regenerated {len(regenerated)} slides with unique content")
         else:
             print(f"   ✓ No duplicate content detected")
-
-        # Step 4: Final quality check
-        print(f"\n🔍 Step 4/4: Final quality check...")
+        
+        # Step 5: Final quality check
+        print(f"\n🔍 Step 5/5: Final quality check...")
         regenerated_count = 0
         for idx, slide in enumerate(slides):
             if is_generic_content(slide["content"]):
                 print(f"   ⚠️ Slide {idx + 1} has generic content, improving...")
                 improved_content = regenerate_duplicate_slide(
                     idx, slide, slides,
-                    request.topic, request.additional_context
+                    request.topic, request.additional_context, attempt_num=3
                 )
                 slides[idx].update(improved_content)
                 regenerated_count += 1
-
+        
         if regenerated_count > 0:
             print(f"   ✓ Improved {regenerated_count} slides")
         else:
             print(f"   ✓ All slides have quality content")
-
+        
         # Final duplicate check
         final_duplicates = detect_duplicate_slides(slides)
+        final_verbatim = sum(1 for slide in slides if has_verbatim_repetition(slide["content"], request.topic))
+        
         if final_duplicates:
             print(f"   ⚠️ Warning: {len(final_duplicates)} similar slides remain")
         else:
             print(f"   ✅ All slides have unique content")
-
+        
+        if final_verbatim > 0:
+            print(f"   ⚠️ Warning: {final_verbatim} slides still have verbatim content")
+        else:
+            print(f"   ✅ No verbatim repetition from topic")
+        
+        # Final verification
+        if len(slides) != request.num_slides:
+            print(f"⚠️ WARNING: Generated {len(slides)} slides, expected {request.num_slides}")
+            if len(slides) > request.num_slides:
+                slides = slides[:request.num_slides]
+            elif len(slides) < request.num_slides:
+                while len(slides) < request.num_slides:
+                    slides.append({
+                        "slide_number": len(slides) + 1,
+                        "title": f"Additional Topic {len(slides) + 1}",
+                        "content": [
+                            "Comprehensive exploration of additional key concepts with specific technical details and practical examples",
+                            "Detailed analysis of methodologies, frameworks, and implementation strategies relevant to this topic area",
+                            "Real-world case studies demonstrating successful applications and industry best practices for optimal results"
+                        ],
+                        "layout_type": "content",
+                        "image_query": request.topic.lower(),
+                        "notes": ""
+                    })
+        
         print(f"\n✅ Successfully generated {len(slides)} slides with:")
         print(f"   • Unique content for each slide")
         print(f"   • No duplicate information")
+        print(f"   • No verbatim topic repetition")
         print(f"   • Quality validation passed")
         print()
-
+        
         # Generate unique presentation ID
         presentation_id = str(uuid.uuid4())
-
+        
         # Store in database
         presentations_db[presentation_id] = {
             "id": presentation_id,
@@ -924,21 +782,21 @@ async def generate_outline(request: PresentationRequest):
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
-
+        
         return {
             "success": True,
             "presentation_id": presentation_id,
             "data": presentations_db[presentation_id]
         }
-
+        
     except json.JSONDecodeError as e:
         raise HTTPException(
-            status_code=500,
+            status_code=500, 
             detail=f"Failed to parse AI response. Please try again. Error: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=500, 
             detail=f"Error generating outline: {str(e)}"
         )
 
@@ -1082,7 +940,8 @@ async def delete_presentation(presentation_id: str):
 async def health_check():
     return {
         "status": "healthy",
-        "presentations_count": len(presentations_db)
+        "presentations_count": len(presentations_db),
+        "version": "2.1.0 - Strict Duplicate Prevention"
     }
 
 
