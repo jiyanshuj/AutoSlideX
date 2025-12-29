@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, Sparkles, Zap } from 'lucide-react';
+import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const API_URL = 'https://autoslidex.onrender.com/api';
 
-// Animated 3D Background Component with Mouse Interaction
+// Animated Background
 const AnimatedBackground = () => {
   useEffect(() => {
     const canvas = document.getElementById('bg-canvas');
@@ -16,7 +16,6 @@ const AnimatedBackground = () => {
     const particles = [];
     const particleCount = 60;
     const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
-    const connectionDistance = 120;
 
     class Particle {
       constructor() {
@@ -47,18 +46,11 @@ const AnimatedBackground = () => {
 
         this.vx *= 0.95;
         this.vy *= 0.95;
-
         this.vx += (this.baseVx - this.vx) * 0.05;
         this.vy += (this.baseVy - this.vy) * 0.05;
 
-        if (this.x < 0 || this.x > canvas.width) {
-          this.vx *= -1;
-          this.baseVx *= -1;
-        }
-        if (this.y < 0 || this.y > canvas.height) {
-          this.vy *= -1;
-          this.baseVy *= -1;
-        }
+        if (this.x < 0 || this.x > canvas.width) { this.vx *= -1; this.baseVx *= -1; }
+        if (this.y < 0 || this.y > canvas.height) { this.vy *= -1; this.baseVy *= -1; }
         if (this.z < 0 || this.z > 800) this.vz *= -1;
       }
 
@@ -97,8 +89,8 @@ const AnimatedBackground = () => {
           const dy = particle.y - otherParticle.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < connectionDistance) {
-            const opacity = (connectionDistance - distance) / connectionDistance;
+          if (distance < 120) {
+            const opacity = (120 - distance) / 120;
             const avgOpacity = (particle.opacity + otherParticle.opacity) / 2;
             ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * avgOpacity * 0.4})`;
             ctx.lineWidth = 0.5;
@@ -108,20 +100,6 @@ const AnimatedBackground = () => {
             ctx.stroke();
           }
         });
-
-        const dxMouse = mouse.x - particle.x;
-        const dyMouse = mouse.y - particle.y;
-        const distanceToMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
-
-        if (distanceToMouse < 150) {
-          const opacity = (150 - distanceToMouse) / 150;
-          ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.6})`;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(particle.x2d, particle.y2d);
-          ctx.lineTo(mouse.x, mouse.y);
-          ctx.stroke();
-        }
       });
 
       requestAnimationFrame(animate);
@@ -157,7 +135,7 @@ const AnimatedBackground = () => {
   );
 };
 
-export default function App() {
+export default function PresentationGenerator() {
   const [step, setStep] = useState('input');
   const [topic, setTopic] = useState('');
   const [numSlides, setNumSlides] = useState(5);
@@ -200,7 +178,7 @@ export default function App() {
         setError('Failed to generate outline');
       }
     } catch (err) {
-      setError('Error connecting to server: ' + err.message);
+      setError('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -223,12 +201,12 @@ export default function App() {
       const data = await response.json();
 
       if (data.success) {
-        alert('Slides updated successfully!');
+        alert('Slides updated!');
       } else {
-        setError('Failed to update slides');
+        setError('Failed to update');
       }
     } catch (err) {
-      setError('Error updating slides: ' + err.message);
+      setError('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -254,10 +232,10 @@ export default function App() {
       if (data.success) {
         setStep('download');
       } else {
-        setError('Failed to generate presentation');
+        setError('Failed to generate');
       }
     } catch (err) {
-      setError('Error generating PPT: ' + err.message);
+      setError('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -269,11 +247,7 @@ export default function App() {
 
   const updateSlideContent = (slideIndex, field, value) => {
     const updatedSlides = [...slides];
-    if (field === 'content') {
-      updatedSlides[slideIndex][field] = value.split('\n').filter(line => line.trim());
-    } else {
-      updatedSlides[slideIndex][field] = value;
-    }
+    updatedSlides[slideIndex][field] = value;
     setSlides(updatedSlides);
   };
 
@@ -281,7 +255,7 @@ export default function App() {
     const newSlide = {
       slide_number: slides.length + 1,
       title: 'New Slide',
-      content: ['Point 1', 'Point 2', 'Point 3'],
+      content: [],
       layout_type: 'content',
       image_query: '',
       notes: ''
@@ -315,16 +289,12 @@ export default function App() {
 
       <div className="container mx-auto px-4 py-6 max-w-6xl relative z-10">
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <h1 className="text-5xl font-bold text-white">
-              AutoSlideX
-            </h1>
-          </div>
-          <p className="text-gray-300 text-base font-medium">Create professional presentations in minutes with AI</p>
+          <h1 className="text-5xl font-bold text-white mb-3">AutoSlideX</h1>
+          <p className="text-gray-300 text-base font-medium">AI-powered presentations in 2 stages</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 backdrop-blur-sm border border-red-500/30 rounded-lg text-red-300">
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300">
             {error}
           </div>
         )}
@@ -333,24 +303,24 @@ export default function App() {
           <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-700 max-w-5xl mx-auto">
             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
               <FileText className="w-7 h-7 text-indigo-400" />
-              Tell us about your presentation
+              Create Your Presentation
             </h2>
 
             <div className="space-y-6">
-              <div className="group">
+              <div>
                 <label className="block text-base font-semibold text-gray-200 mb-2">
-                  Presentation Topic *
+                  Topic *
                 </label>
                 <input
                   type="text"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="e.g., Introduction to Machine Learning"
-                  className="w-full min-h-[52px] px-5 py-3 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none transition-all duration-300 text-white text-base placeholder:text-gray-400 placeholder:text-sm hover:bg-gray-800 hover:border-indigo-400/50 leading-relaxed"
+                  className="w-full min-h-[52px] px-5 py-3 bg-gray-800/80 border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white"
                 />
               </div>
 
-              <div className="group">
+              <div>
                 <label className="block text-base font-semibold text-gray-200 mb-2">
                   Number of Slides
                 </label>
@@ -361,10 +331,7 @@ export default function App() {
                     max="20"
                     value={numSlides}
                     onChange={(e) => setNumSlides(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    style={{
-                      background: `linear-gradient(to right, #6366f1 0%, #6366f1 ${((numSlides - 3) / 17) * 100}%, #374151 ${((numSlides - 3) / 17) * 100}%, #374151 100%)`
-                    }}
+                    className="flex-1 h-2 bg-gray-700 rounded-lg accent-indigo-500"
                   />
                   <input
                     type="number"
@@ -373,46 +340,39 @@ export default function App() {
                     value={numSlides}
                     onChange={(e) => {
                       const value = parseInt(e.target.value);
-                      if (value >= 3 && value <= 20) {
-                        setNumSlides(value);
-                      }
+                      if (value >= 3 && value <= 20) setNumSlides(value);
                     }}
-                    className="w-20 text-center text-xl font-bold text-indigo-400 bg-gray-800/80 border-2 border-gray-700 rounded-lg px-3 py-2 focus:border-indigo-500 focus:outline-none"
+                    className="w-20 text-center text-xl font-bold text-indigo-400 bg-gray-800/80 border-2 border-gray-700 rounded-lg px-3 py-2"
                   />
                 </div>
               </div>
 
-              <div className="group">
+              <div>
                 <label className="block text-base font-semibold text-gray-200 mb-2">
                   Additional Context (Optional)
                 </label>
                 <textarea
                   value={additionalContext}
                   onChange={(e) => setAdditionalContext(e.target.value)}
-                  placeholder="Add any specific requirements, target audience, or key points to include..."
+                  placeholder="Add requirements, audience, key points..."
                   rows="3"
-                  className="w-full min-h-[100px] px-5 py-3 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none transition-all duration-300 text-white text-base placeholder:text-gray-400 placeholder:text-sm hover:bg-gray-800 hover:border-indigo-400/50 leading-relaxed resize-none"
+                  className="w-full px-5 py-3 bg-gray-800/80 border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white resize-none"
                 />
               </div>
 
               <button
                 onClick={generateOutline}
                 disabled={loading}
-                className="group relative w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg transition-all duration-300 disabled:opacity-50 overflow-hidden"
+                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative flex items-center justify-center gap-2">
-                  {loading ? (
-                    <>
-                      <Loader className="w-5 h-5 animate-spin" />
-                      Generating Outline...
-                    </>
-                  ) : (
-                    <>
-                      Generate Presentation
-                    </>
-                  )}
-                </span>
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader className="w-5 h-5 animate-spin" />
+                    Generating Outline...
+                  </span>
+                ) : (
+                  'Generate Outline'
+                )}
               </button>
             </div>
           </div>
@@ -420,20 +380,25 @@ export default function App() {
 
         {step === 'edit' && (
           <div className="space-y-6">
+            <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-indigo-400 mt-0.5" />
+              <div>
+                <p className="text-indigo-300 font-semibold">Preview Mode - Stage 1</p>
+                <p className="text-indigo-200/80 text-sm mt-1">
+                  Slide titles shown below. Add/edit/delete slides. Detailed content will be generated when you click "Generate PowerPoint".
+                </p>
+              </div>
+            </div>
+
             <div className="bg-gray-900/80 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-3xl font-bold text-white">
-                  {presentationTitle}
-                </h2>
+                <h2 className="text-3xl font-bold text-white">{presentationTitle}</h2>
                 <button
                   onClick={addSlide}
-                  className="group relative flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl transition-all duration-300 overflow-hidden"
+                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl"
                 >
-                  <div className="absolute inset-0 bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <span className="relative flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    Add Slide
-                  </span>
+                  <Plus className="w-4 h-4" />
+                  Add Slide
                 </button>
               </div>
 
@@ -441,108 +406,44 @@ export default function App() {
                 {slides.map((slide, index) => (
                   <div
                     key={index}
-                    className="bg-gray-800/60 backdrop-blur-sm border-2 border-gray-700 rounded-2xl p-6 hover:border-indigo-400/70 transition-all duration-300 hover:bg-gray-800/80 hover:shadow-lg hover:shadow-indigo-500/20"
+                    className="bg-gray-800/60 border-2 border-gray-700 rounded-2xl p-6 hover:border-indigo-400/70"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold rounded-full shadow-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1">
+                        <span className="flex-shrink-0 flex items-center justify-center w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold rounded-full">
                           {slide.slide_number}
                         </span>
-                        <input
-                          type="text"
-                          value={slide.title}
-                          onChange={(e) => updateSlideContent(index, 'title', e.target.value)}
-                          className="text-xl font-bold bg-transparent border-b-2 border-transparent hover:border-indigo-400/50 focus:border-indigo-500 focus:outline-none px-2 py-1 text-white transition-all duration-300 min-w-[200px] leading-relaxed"
-                        />
+                        <div className="flex-1">
+                          {editingSlide === index ? (
+                            <input
+                              type="text"
+                              value={slide.title}
+                              onChange={(e) => updateSlideContent(index, 'title', e.target.value)}
+                              className="w-full text-xl font-bold bg-gray-800 border-2 border-indigo-500 rounded px-3 py-2 text-white focus:outline-none"
+                            />
+                          ) : (
+                            <h3 className="text-xl font-bold text-white leading-tight">{slide.title}</h3>
+                          )}
+                          <p className="text-gray-400 italic text-sm mt-2">
+                            Content will be generated automatically in Stage 2
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 ml-4">
                         <button
                           onClick={() => setEditingSlide(editingSlide === index ? null : index)}
-                          className="p-2 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all duration-300"
+                          className="p-2 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => deleteSlide(index)}
-                          className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-all duration-300"
+                          className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
-
-                    {editingSlide === index ? (
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-200 mb-2">
-                            Content (one point per line)
-                          </label>
-                          <textarea
-                            value={slide.content.join('\n')}
-                            onChange={(e) => updateSlideContent(index, 'content', e.target.value)}
-                            rows="6"
-                            className="w-full min-h-[150px] px-4 py-3 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white text-base transition-all duration-300 hover:bg-gray-800 leading-relaxed resize-y"
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-200 mb-2">
-                              Layout Type
-                            </label>
-                            <select
-                              value={slide.layout_type}
-                              onChange={(e) => updateSlideContent(index, 'layout_type', e.target.value)}
-                              className="w-full min-h-[44px] px-4 py-2 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white text-base transition-all duration-300 hover:bg-gray-800 leading-relaxed"
-                            >
-                              <option value="content" className="bg-gray-800">Content</option>
-                              <option value="two_column" className="bg-gray-800">Two Column</option>
-                              <option value="image" className="bg-gray-800">Image</option>
-                              <option value="title" className="bg-gray-800">Title</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-200 mb-2">
-                              Image Query
-                            </label>
-                            <input
-                              type="text"
-                              value={slide.image_query || ''}
-                              onChange={(e) => updateSlideContent(index, 'image_query', e.target.value)}
-                              placeholder="e.g., technology, business"
-                              className="w-full min-h-[44px] px-4 py-2 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white text-base placeholder:text-gray-400 placeholder:text-sm transition-all duration-300 hover:bg-gray-800 leading-relaxed"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-200 mb-2">
-                            Speaker Notes
-                          </label>
-                          <textarea
-                            value={slide.notes || ''}
-                            onChange={(e) => updateSlideContent(index, 'notes', e.target.value)}
-                            placeholder="Add speaker notes for this slide..."
-                            rows="3"
-                            className="w-full min-h-[90px] px-4 py-3 bg-gray-800/80 backdrop-blur-sm border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white text-base placeholder:text-gray-400 placeholder:text-sm transition-all duration-300 hover:bg-gray-800 leading-relaxed resize-y"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="ml-11">
-                        <ul className="space-y-2">
-                          {slide.content.map((point, i) => (
-                            <li key={i} className="flex items-start gap-2 text-gray-300">
-                              <span className="text-indigo-400 mt-1">•</span>
-                              <span>{point}</span>
-                            </li>
-                          ))}
-                        </ul>
-                        {slide.layout_type !== 'content' && (
-                          <div className="mt-3 text-sm text-gray-400">
-                            Layout: <span className="font-semibold text-indigo-400">{slide.layout_type}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -552,33 +453,27 @@ export default function App() {
               <button
                 onClick={updateSlides}
                 disabled={loading}
-                className="group relative flex-1 bg-blue-600 text-white py-4 rounded-xl font-semibold text-lg transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-2 overflow-hidden"
+                className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <div className="absolute inset-0 bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative flex items-center gap-2">
-                  <Save className="w-5 h-5" />
-                  Save Changes
-                </span>
+                <Save className="w-5 h-5" />
+                Save Changes
               </button>
               <button
                 onClick={generatePPT}
                 disabled={loading}
-                className="group relative flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-2 overflow-hidden"
+                className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative flex items-center gap-2">
-                  {loading ? (
-                    <>
-                      <Loader className="w-5 h-5 animate-spin" />
-                      Generating PPT...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="w-5 h-5" />
-                      Generate PowerPoint
-                    </>
-                  )}
-                </span>
+                {loading ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    Creating PowerPoint...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5" />
+                    Generate PowerPoint
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -587,46 +482,35 @@ export default function App() {
         {step === 'download' && (
           <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-12 text-center border border-gray-700 max-w-2xl mx-auto">
             <div className="mb-8">
-              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-                <Download className="w-10 h-10 text-white" />
+              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="w-10 h-10 text-white" />
               </div>
               <h2 className="text-3xl font-bold text-white mb-2">
                 Presentation Ready!
               </h2>
               <p className="text-gray-300 text-lg">
-                Your PowerPoint presentation has been generated successfully
+                Your PowerPoint with detailed content and images
               </p>
             </div>
 
             <div className="space-y-4">
               <button
                 onClick={downloadPresentation}
-                className="group relative w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden"
+                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-2"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative flex items-center gap-2">
-                  <Download className="w-5 h-5" />
-                  Download PowerPoint
-                </span>
+                <Download className="w-5 h-5" />
+                Download PowerPoint
               </button>
               <button
                 onClick={resetApp}
-                className="group relative w-full bg-gray-800/80 backdrop-blur-sm text-white py-4 rounded-xl font-semibold text-lg transition-all duration-300 border-2 border-gray-700 flex items-center justify-center gap-2 overflow-hidden"
+                className="w-full bg-gray-800/80 text-white py-4 rounded-xl font-semibold text-lg border-2 border-gray-700"
               >
-                <div className="absolute inset-0 bg-gray-700/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative">Create New Presentation</span>
+                Create New Presentation
               </button>
             </div>
           </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(-20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }
