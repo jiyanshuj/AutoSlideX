@@ -68,19 +68,19 @@ Preview your slides before downloading them.
 
 ---
 
-### Download Presentation
-Export your generated presentation as a PowerPoint file with a single click.
-
-![Download](images/Download.png)
-*Download Feature - Save your presentation in PPTX format*
-
----
-
 ### Create New Slide
 Add and customize individual slides to your presentation.
 
 ![New Slide](images/New-slide.png)
 *New Slide Creation - Add custom content to presentations*
+
+---
+
+### Download Presentation
+Export your generated presentation as a PowerPoint file with a single click.
+
+![Download](images/Download.png)
+*Download Feature - Save your presentation in PPTX format*
 
 ---
 
