@@ -60,19 +60,19 @@ The main interface where users enter presentation topics and specify the number 
 
 ---
 
+### Presentation Preview
+Preview your slides before downloading them.
+
+![Preview](images/Preveiw.png)
+*Slide Preview - Review your presentation before export*
+
+---
+
 ### Download Presentation
 Export your generated presentation as a PowerPoint file with a single click.
 
 ![Download](images/Download.png)
 *Download Feature - Save your presentation in PPTX format*
-
----
-
-### Final PowerPoint Presentation
-The completed presentation exported and ready for use.
-
-![Final PPT](images/Final-ppt.png)
-*Generated PowerPoint Presentation - Professional quality output*
 
 ---
 
@@ -84,11 +84,11 @@ Add and customize individual slides to your presentation.
 
 ---
 
-### Presentation Preview
-Preview your slides before downloading them.
+### Final PowerPoint Presentation
+The completed presentation exported and ready for use.
 
-![Preview](images/Preveiw.png)
-*Slide Preview - Review your presentation before export*
+![Final PPT](images/Final-ppt.png)
+*Generated PowerPoint Presentation - Professional quality output*
 
 ---
 
