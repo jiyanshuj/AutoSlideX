@@ -97,7 +97,7 @@ npm run lint
 - Customizable through `tailwind.config.js`
 
 ### API Configuration
-- Backend API URL: `https://autoslidex.onrender.com/api`
+- Backend API URL: `https://autoslidex-wvg0.onrender.com/api`
 - Configured in the PresentationGenerator component
 
 ## Browser Support

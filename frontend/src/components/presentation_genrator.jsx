@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-const API_URL = 'https://autoslidex.onrender.com/api';
+const API_URL = 'https://autoslidex-wvg0.onrender.com/api';
 
 // Animated Background
 const AnimatedBackground = () => {
