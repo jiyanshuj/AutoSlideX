@@ -2,7 +2,7 @@ services:
   - type: web
     name: fastapi-backend
     env: python
-    runtime: python-3.10
+    runtime: python-3.12.5
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install --upgrade pip setuptools wheel && pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
