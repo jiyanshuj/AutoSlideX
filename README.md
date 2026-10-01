@@ -2,6 +2,8 @@
 
 **Intelligent PowerPoint Presentation Generator powered by AI**
 
+Live demo: https://auto-slide-x.vercel.app/
+
 AutoSlideX is a full-stack application that leverages Google's Gemini AI to automatically generate professional PowerPoint presentations from simple topics or descriptions. It combines a modern React frontend with a powerful FastAPI backend to create an seamless presentation generation experience.
 
 ---
