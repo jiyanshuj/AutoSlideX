@@ -1,139 +1,204 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import PromptInput from './ai-chat-input';
+import { FileText, Download, Edit2, Plus, Trash2, Save, Loader, CheckCircle2, ChevronDown } from 'lucide-react';
 
 const API_URL = 'https://autoslidex-wvg0.onrender.com/api';
 
-// Animated Background
+const VERTEX_SHADER = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+
+const FRAGMENT_SHADER = `
+precision highp float;
+uniform vec2 u_res;
+uniform float u_time;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.-2.*f);
+  return mix(mix(hash(i), hash(i+vec2(1,0)), f.x),
+             mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0., a = .5;
+  for(int i=0;i<3;i++){ v += a*noise(p); p = p*2.02 + 7.3; a *= .5; }
+  return v;
+}
+
+vec3 ramp(float t){
+  vec3 c0 = vec3(0.016,0.016,0.016);
+  vec3 c1 = vec3(0.22,0.155,0.11);
+  vec3 c2 = vec3(0.52,0.45,0.39);
+  vec3 c3 = vec3(0.80,0.78,0.78);
+  vec3 c4 = vec3(0.97,0.96,0.96);
+  vec3 c = mix(c0, c1, smoothstep(0.18, 0.42, t));
+  c = mix(c, c2, smoothstep(0.48, 0.66, t));
+  c = mix(c, c3, smoothstep(0.64, 0.82, t));
+  c = mix(c, c4, smoothstep(0.80, 0.97, t));
+  return c;
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  vec2 p = (gl_FragCoord.xy - .5*u_res.xy) / u_res.y;
+  float t = u_time * 0.07;
+
+  // Flow direction: lower-left -> upper-right
+  vec2 d = normalize(vec2(0.82, 0.57));
+  vec2 n = vec2(-d.y, d.x);
+  float A = dot(p, d);
+  float B = dot(p, n);
+
+  // Slow, smooth warp that also drifts along the flow direction
+  float wn = fbm(p * 0.9 + vec2(3.1, 1.7) - d * t * 0.6);
+  float w = 0.34 * sin(B * 2.3 + A * 0.9 - t * 1.1)
+          + 0.20 * sin(B * 3.9 - A * 1.4 + t * 0.8)
+          + 0.55 * (wn - 0.5);
+
+  // Silky ribbons that travel toward the upper-right
+  float band  = 0.5 + 0.5 * sin(((A + w) * 1.55 - t) * 3.14159);
+  float band2 = 0.5 + 0.5 * sin((A * 0.7 - w * 0.8) * 2.4 - t * 0.7 + 1.3);
+  float f = band * 0.55 + band2 * 0.25 + A * 0.35 + 0.12;
+  float v = smoothstep(0.10, 1.0, f) * 0.97;
+
+  // Thin dark outline along ribbon edges
+  float rim = smoothstep(0.0, 0.04, abs(v - 0.56));
+  v = mix(v, v * 0.30, (1. - rim) * 0.85);
+
+  vec3 col = ramp(v);
+
+  // Keep the area behind the title readable
+  vec2 tc = vec2((uv.x - 0.5) * 1.3, (uv.y - 0.55) * 2.0);
+  col *= 1.0 - 0.30 * exp(-dot(tc, tc) * 3.0);
+
+  col *= smoothstep(0.0, 0.40, uv.y) * 0.9 + 0.1;
+  col *= 1.0 - 0.45 * dot(uv - .5, uv - .5) * 2.2;
+
+  // Twinkling stars
+  vec2 sg = floor(gl_FragCoord.xy / 3.0);
+  float s = step(0.9972, hash(sg));
+  col += s * (0.35 + 0.65 * hash(sg + 3.1)) * (0.6 + 0.4 * sin(u_time * 1.4 + hash(sg) * 40.));
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
 const AnimatedBackground = () => {
+  const canvasRef = useRef(null);
+
   useEffect(() => {
-    const canvas = document.getElementById('bg-canvas');
-    if (!canvas) return;
+    const canvas = canvasRef.current;
+    const gl = canvas?.getContext('webgl', { antialias: false, alpha: false });
+    if (!gl) return undefined;
 
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    const particles = [];
-    const particleCount = 60;
-    const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
-
-    class Particle {
-      constructor() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * canvas.height;
-        this.z = Math.random() * 800;
-        this.baseVx = (Math.random() - 0.5) * 0.3;
-        this.baseVy = (Math.random() - 0.5) * 0.3;
-        this.vx = this.baseVx;
-        this.vy = this.baseVy;
-        this.vz = (Math.random() - 0.5) * 1.5;
+    const compileShader = (type, source) => {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
       }
-
-      update() {
-        const dx = mouse.x - this.x;
-        const dy = mouse.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < 200) {
-          const force = (200 - distance) / 200;
-          this.vx += (dx / distance) * force * 0.1;
-          this.vy += (dy / distance) * force * 0.1;
-        }
-
-        this.x += this.vx;
-        this.y += this.vy;
-        this.z += this.vz;
-
-        this.vx *= 0.95;
-        this.vy *= 0.95;
-        this.vx += (this.baseVx - this.vx) * 0.05;
-        this.vy += (this.baseVy - this.vy) * 0.05;
-
-        if (this.x < 0 || this.x > canvas.width) { this.vx *= -1; this.baseVx *= -1; }
-        if (this.y < 0 || this.y > canvas.height) { this.vy *= -1; this.baseVy *= -1; }
-        if (this.z < 0 || this.z > 800) this.vz *= -1;
-      }
-
-      draw() {
-        const scale = 800 / (800 + this.z);
-        const x2d = (this.x - canvas.width / 2) * scale + canvas.width / 2;
-        const y2d = (this.y - canvas.height / 2) * scale + canvas.height / 2;
-        const size = 1.5 * scale;
-        const opacity = (800 - this.z) / 800;
-
-        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.8})`;
-        ctx.beginPath();
-        ctx.arc(x2d, y2d, size, 0, Math.PI * 2);
-        ctx.fill();
-
-        this.x2d = x2d;
-        this.y2d = y2d;
-        this.opacity = opacity;
-      }
-    }
-
-    for (let i = 0; i < particleCount; i++) {
-      particles.push(new Particle());
-    }
-
-    function animate() {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      particles.forEach((particle, i) => {
-        particle.update();
-        particle.draw();
-
-        particles.slice(i + 1).forEach(otherParticle => {
-          const dx = particle.x - otherParticle.x;
-          const dy = particle.y - otherParticle.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < 120) {
-            const opacity = (120 - distance) / 120;
-            const avgOpacity = (particle.opacity + otherParticle.opacity) / 2;
-            ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * avgOpacity * 0.4})`;
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(particle.x2d, particle.y2d);
-            ctx.lineTo(otherParticle.x2d, otherParticle.y2d);
-            ctx.stroke();
-          }
-        });
-      });
-
-      requestAnimationFrame(animate);
-    }
-
-    animate();
-
-    const handleMouseMove = (e) => {
-      mouse.x = e.clientX;
-      mouse.y = e.clientY;
+      return shader;
     };
 
-    const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
+    const program = gl.createProgram();
+    gl.attachShader(program, compileShader(gl.VERTEX_SHADER, VERTEX_SHADER));
+    gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return undefined;
+    gl.useProgram(program);
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('resize', handleResize);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const position = gl.getAttribLocation(program, 'p');
+    gl.enableVertexAttribArray(position);
+    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+
+    const resolution = gl.getUniformLocation(program, 'u_res');
+    const time = gl.getUniformLocation(program, 'u_time');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const scale = Math.min(window.devicePixelRatio || 1, 1.5) * 0.75;
+
+    const resize = () => {
+      canvas.width = Math.floor(window.innerWidth * scale);
+      canvas.height = Math.floor(window.innerHeight * scale);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      if (reduceMotion && draw) draw();
+    };
+    let draw;
+    resize();
+    window.addEventListener('resize', resize);
+
+    let animationFrame;
+    const start = performance.now();
+    draw = () => {
+      gl.uniform2f(resolution, canvas.width, canvas.height);
+      gl.uniform1f(time, reduceMotion ? 8 : (performance.now() - start) / 1000 + 8);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (!reduceMotion && !document.hidden) animationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+
+    const handleVisibility = () => {
+      if (!document.hidden && !reduceMotion) {
+        cancelAnimationFrame(animationFrame);
+        draw();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
     };
   }, []);
 
   return (
     <canvas
-      id="bg-canvas"
-      className="fixed top-0 left-0 w-full h-full -z-10"
-      style={{ background: '#000000' }}
+      ref={canvasRef}
+      aria-hidden="true"
+      className="fixed inset-0 z-0 h-full w-full"
+      style={{ background: 'radial-gradient(80% 60% at 75% 10%, #cfcbc8 0%, #3a2e26 45%, #050505 100%)' }}
     />
   );
 };
+
+const STEPS = [
+  { id: 'input',    label: 'Describe',  desc: 'Enter your topic & settings' },
+  { id: 'edit',     label: 'Refine',    desc: 'Review & edit slide outline' },
+  { id: 'download', label: 'Export',    desc: 'Download your PowerPoint' },
+];
+
+function WorkflowStepper({ step }) {
+  const current = STEPS.findIndex(s => s.id === step);
+  return (
+    <div className="workflow-stepper max-w-5xl mx-auto mb-10">
+      {STEPS.map((s, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <React.Fragment key={s.id}>
+            <div className={`workflow-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
+              <div className="workflow-badge">
+                {done
+                  ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7.5L5.8 10L11 4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  : <span>{i + 1}</span>
+                }
+              </div>
+              <div className="workflow-text">
+                <span className="workflow-label">{s.label}</span>
+                <span className="workflow-desc">{s.desc}</span>
+              </div>
+            </div>
+            {i < STEPS.length - 1 && <div className={`workflow-connector ${done ? 'done' : ''}`} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function PresentationGenerator() {
   const [step, setStep] = useState('input');
@@ -144,6 +209,8 @@ export default function PresentationGenerator() {
   const [slides, setSlides] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [showContext, setShowContext] = useState(false);
   const [editingSlide, setEditingSlide] = useState(null);
   const [presentationTitle, setPresentationTitle] = useState('');
 
@@ -163,7 +230,7 @@ export default function PresentationGenerator() {
         body: JSON.stringify({
           topic,
           num_slides: numSlides,
-          additional_context: additionalContext
+          additional_context: showContext ? additionalContext : ''
         })
       });
 
@@ -201,7 +268,8 @@ export default function PresentationGenerator() {
       const data = await response.json();
 
       if (data.success) {
-        alert('Slides updated!');
+        setNotice('Changes saved.');
+        setTimeout(() => setNotice(''), 2500);
       } else {
         setError('Failed to update');
       }
@@ -276,6 +344,7 @@ export default function PresentationGenerator() {
     setTopic('');
     setNumSlides(5);
     setAdditionalContext('');
+    setShowContext(false);
     setPresentationId('');
     setSlides([]);
     setError('');
@@ -284,118 +353,90 @@ export default function PresentationGenerator() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="flowstack-theme min-h-[100dvh] relative overflow-hidden">
       <AnimatedBackground />
+      <div className="grain" aria-hidden="true" />
 
-      <div className="container mx-auto px-4 py-6 max-w-6xl relative z-10">
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-white mb-3">AutoSlideX</h1>
-          <p className="text-gray-300 text-base font-medium">AI-powered presentations in 2 stages</p>
-        </div>
+      <div className="container mx-auto px-4 pt-14 pb-12 max-w-6xl relative z-10">
+        <header className="flowstack-header">
+          <p className="flowstack-kicker">AI-Powered Presentation Workflow</p>
+          <h1 className="flowstack-title">
+            Auto<span className="flowstack-accent">SlideX</span>
+          </h1>
+          <p className="flowstack-subtitle">Turn a rough idea into a polished deck, one clear stage at a time.</p>
+        </header>
+
+        <WorkflowStepper step={step} />
 
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300">
+          <div className="mb-6 p-4 bg-red-400/10 border border-red-400/25 rounded-lg text-red-200 max-w-5xl mx-auto">
             {error}
           </div>
         )}
 
+        {notice && (
+          <div role="status" className="mb-6 p-4 bg-[#e0a458]/10 border border-[#e0a458]/30 rounded-lg text-[#e0a458] max-w-5xl mx-auto">
+            {notice}
+          </div>
+        )}
+
         {step === 'input' && (
-          <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-700 max-w-5xl mx-auto">
-            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-              <FileText className="w-7 h-7 text-indigo-400" />
-              Create Your Presentation
-            </h2>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-base font-semibold text-gray-200 mb-2">
-                  Topic *
-                </label>
-                <input
-                  type="text"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g., Introduction to Machine Learning"
-                  className="w-full min-h-[52px] px-5 py-3 bg-gray-800/80 border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-gray-200 mb-2">
-                  Number of Slides
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="3"
-                    max="20"
-                    value={numSlides}
-                    onChange={(e) => setNumSlides(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-gray-700 rounded-lg accent-indigo-500"
-                  />
-                  <input
-                    type="number"
-                    min="3"
-                    max="20"
-                    value={numSlides}
-                    onChange={(e) => {
-                      const value = parseInt(e.target.value);
-                      if (value >= 3 && value <= 20) setNumSlides(value);
-                    }}
-                    className="w-20 text-center text-xl font-bold text-indigo-400 bg-gray-800/80 border-2 border-gray-700 rounded-lg px-3 py-2"
+          <div className="input-workspace mx-auto max-w-3xl">
+            <div className="input-controls">
+              <PromptInput
+                value={topic}
+                onChange={setTopic}
+                slides={numSlides}
+                onSlidesChange={setNumSlides}
+                loading={loading}
+                onSubmit={generateOutline}
+                placeholder="e.g., Introduction to machine learning"
+                bottomContent={(
+                  <label className="context-toggle ml-2 inline-flex items-center gap-2 cursor-pointer select-none group">
+                    <input
+                      type="checkbox"
+                      checked={showContext}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setShowContext(checked);
+                        if (!checked) setAdditionalContext('');
+                      }}
+                      className="peer sr-only"
+                    />
+                    <span className="flex size-5 items-center justify-center rounded-md border border-stone-600 bg-stone-900 transition-all duration-200 group-hover:border-stone-500 peer-checked:border-[#e0a458] peer-checked:bg-[#e0a458] peer-focus-visible:ring-2 peer-focus-visible:ring-[#e0a458]/40 [&>svg]:opacity-0 peer-checked:[&>svg]:opacity-100">
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="M3 7.5L5.8 10L11 4" stroke="#0c0a09" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span className="text-xs font-semibold text-stone-300">Context</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-stone-500 transition-transform ${showContext ? 'rotate-180' : ''}`} />
+                  </label>
+                )}
+              />
+              {showContext && (
+                <div className="context-field rise">
+                  <textarea
+                    value={additionalContext}
+                    onChange={(e) => setAdditionalContext(e.target.value)}
+                    placeholder="Add requirements, audience, key points..."
+                    rows="3"
+                    tabIndex={0}
+                    className="mt-3 w-full px-4 py-3 bg-stone-900/80 border border-stone-700 rounded-2xl text-sm placeholder:text-stone-500 focus:border-[#e0a458]/70 focus:outline-none focus:ring-2 focus:ring-[#e0a458]/20 transition-all duration-200 text-stone-50 resize-none"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-gray-200 mb-2">
-                  Additional Context (Optional)
-                </label>
-                <textarea
-                  value={additionalContext}
-                  onChange={(e) => setAdditionalContext(e.target.value)}
-                  placeholder="Add requirements, audience, key points..."
-                  rows="3"
-                  className="w-full px-5 py-3 bg-gray-800/80 border-2 border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none text-white resize-none"
-                />
-              </div>
-
-              <button
-                onClick={generateOutline}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Loader className="w-5 h-5 animate-spin" />
-                    Generating Outline...
-                  </span>
-                ) : (
-                  'Generate Outline'
-                )}
-              </button>
+              )}
             </div>
           </div>
         )}
 
         {step === 'edit' && (
           <div className="space-y-6">
-            <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-indigo-400 mt-0.5" />
-              <div>
-                <p className="text-indigo-300 font-semibold">Preview Mode - Stage 1</p>
-                <p className="text-indigo-200/80 text-sm mt-1">
-                  Slide titles shown below. Add/edit/delete slides. Detailed content will be generated when you click "Generate PowerPoint".
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gray-900/80 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-gray-700">
+            <div className="bg-stone-900/70 backdrop-blur-xl rounded-3xl shadow-[0_20px_60px_-20px_rgba(224,164,88,0.12)] p-8 border border-stone-800">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-3xl font-bold text-white">{presentationTitle}</h2>
+                <h2 className="text-3xl font-semibold tracking-tight text-stone-50">{presentationTitle}</h2>
                 <button
                   onClick={addSlide}
-                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl"
+                  className="flex items-center gap-2 px-6 py-3 bg-stone-800 text-stone-100 border border-stone-800 hover:bg-stone-700 active:scale-[0.98] transition-all duration-200 rounded-xl"
                 >
                   <Plus className="w-4 h-4" />
                   Add Slide
@@ -406,11 +447,12 @@ export default function PresentationGenerator() {
                 {slides.map((slide, index) => (
                   <div
                     key={index}
-                    className="bg-gray-800/60 border-2 border-gray-700 rounded-2xl p-6 hover:border-indigo-400/70"
+                    style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}
+                    className="rise bg-stone-800/60 border border-stone-800 rounded-2xl p-6 hover:border-[#e0a458]/70"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3 flex-1">
-                        <span className="flex-shrink-0 flex items-center justify-center w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold rounded-full">
+                        <span className="flex-shrink-0 flex items-center justify-center w-10 h-10 bg-[#e0a458]/10 text-[#e0a458] border border-[#e0a458]/30 tabular-nums font-bold rounded-full">
                           {slide.slide_number}
                         </span>
                         <div className="flex-1">
@@ -419,12 +461,12 @@ export default function PresentationGenerator() {
                               type="text"
                               value={slide.title}
                               onChange={(e) => updateSlideContent(index, 'title', e.target.value)}
-                              className="w-full text-xl font-bold bg-gray-800 border-2 border-indigo-500 rounded px-3 py-2 text-white focus:outline-none"
+                              className="w-full text-xl font-bold bg-stone-800 border-2 border-[#e0a458] rounded px-3 py-2 text-stone-50 focus:outline-none"
                             />
                           ) : (
-                            <h3 className="text-xl font-bold text-white leading-tight">{slide.title}</h3>
+                            <h3 className="text-xl font-semibold tracking-tight text-stone-50 leading-tight">{slide.title}</h3>
                           )}
-                          <p className="text-gray-400 italic text-sm mt-2">
+                          <p className="text-stone-400 italic text-sm mt-2">
                             Content will be generated automatically in Stage 2
                           </p>
                         </div>
@@ -432,13 +474,13 @@ export default function PresentationGenerator() {
                       <div className="flex gap-2 ml-4">
                         <button
                           onClick={() => setEditingSlide(editingSlide === index ? null : index)}
-                          className="p-2 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all"
+                          className="p-2 text-stone-400 hover:text-stone-100 hover:bg-stone-700/60 rounded-lg transition-all"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => deleteSlide(index)}
-                          className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-all"
+                          className="p-2 text-stone-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -453,7 +495,7 @@ export default function PresentationGenerator() {
               <button
                 onClick={updateSlides}
                 disabled={loading}
-                className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 bg-stone-800 text-stone-100 border border-stone-800 hover:bg-stone-700 active:scale-[0.98] transition-all duration-200 py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <Save className="w-5 h-5" />
                 Save Changes
@@ -461,7 +503,7 @@ export default function PresentationGenerator() {
               <button
                 onClick={generatePPT}
                 disabled={loading}
-                className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 bg-[#e0a458] text-stone-950 hover:bg-[#ebb269] active:scale-[0.98] transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0a458] py-4 rounded-xl font-semibold text-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
@@ -480,15 +522,15 @@ export default function PresentationGenerator() {
         )}
 
         {step === 'download' && (
-          <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-12 text-center border border-gray-700 max-w-2xl mx-auto">
+          <div className="bg-stone-900/70 backdrop-blur-xl rounded-2xl shadow-[0_20px_60px_-20px_rgba(224,164,88,0.12)] p-12 text-center border border-stone-800 max-w-2xl mx-auto">
             <div className="mb-8">
-              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 className="w-10 h-10 text-white" />
+              <div className="w-20 h-20 bg-[#e0a458] rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="w-10 h-10 text-stone-950" />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2">
+              <h2 className="text-3xl font-semibold tracking-tight text-stone-50 mb-2">
                 Presentation Ready!
               </h2>
-              <p className="text-gray-300 text-lg">
+              <p className="text-stone-300 text-lg">
                 Your PowerPoint with detailed content and images
               </p>
             </div>
@@ -496,14 +538,14 @@ export default function PresentationGenerator() {
             <div className="space-y-4">
               <button
                 onClick={downloadPresentation}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-2"
+                className="w-full bg-[#e0a458] text-stone-950 hover:bg-[#ebb269] active:scale-[0.98] transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0a458] py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-2"
               >
                 <Download className="w-5 h-5" />
                 Download PowerPoint
               </button>
               <button
                 onClick={resetApp}
-                className="w-full bg-gray-800/80 text-white py-4 rounded-xl font-semibold text-lg border-2 border-gray-700"
+                className="w-full bg-stone-800/80 text-stone-100 hover:bg-stone-800 active:scale-[0.98] transition-all duration-200 py-4 rounded-xl font-semibold text-lg border border-stone-800"
               >
                 Create New Presentation
               </button>
