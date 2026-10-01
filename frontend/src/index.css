@@ -220,6 +220,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0;
+  max-width: 56rem;
 }
 .workflow-step {
   display: flex;
